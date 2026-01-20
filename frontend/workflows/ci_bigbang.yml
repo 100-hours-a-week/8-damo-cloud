@@ -1,0 +1,95 @@
+# .github/workflows/frontend-ci.yml
+
+name: Frontend CI
+
+on:
+  pull_request:
+    branches: [main, develop] # PR 발생 시 CI 트리거
+  push:
+    branches: [main, develop]
+jobs:
+  frontend-ci:
+    runs-on: ubuntu-latest # Node.js 환경 제공
+
+    steps:
+      # 1. 코드 체크아웃
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # 2. Node.js 설치
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      # 3. 의존성 설치 (CI 캐시 최적화된 npm ci 사용)
+      - name: Install dependencies
+        run: npm ci
+
+      # 4. (선택) 포맷 검증 - Prettier 쓰는 경우
+      - name: Check formatting (Prettier)
+        run: npm run format:check
+
+      # 5. Lint는 빌드 전에
+      - name: Run Lint (ESLint)
+        run: npm run lint
+
+      # 6. 유닛 테스트 실행 (Jest 기반) - 나중에 test 진행할 때
+      #      - name: Run Unit Tests (Jest)
+      #        run: npm run test
+
+      # 7. 앱 빌드 (.next 디렉토리 생성)
+      - name: Build Next.js App
+        run: npm run build
+
+      # 8. SSR 배포용 패키징 (Next standalone 기준)
+      - name: Package Next.js standalone bundle
+        run: |
+          rm -rf deploy_fe
+          mkdir -p deploy_fe
+
+          # standalone 서버 실행 파일 + 필요한 node_modules 포함
+          cp -r .next/standalone/* deploy_fe/
+
+          # 정적 파일(필수)
+          mkdir -p deploy_fe/.next
+          cp -r .next/static deploy_fe/.next/static
+
+          # public (사용하면 필수)
+          if [ -d "public" ]; then
+            cp -r public deploy_fe/public
+          fi
+
+          # 런타임에서 필요하면 포함
+          cp package.json deploy_fe/package.json
+
+          tar -czf next-standalone.tar.gz -C deploy_fe .
+
+      # 9. Retention
+      - name: Decide artifact retention days
+        id: retention
+        run: |
+          if [[ "${{ github.base_ref }}" == "main" ]]; then
+            echo "days=30" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.base_ref }}" == "develop" ]]; then
+            echo "days=14" >> "$GITHUB_OUTPUT"
+          fi
+
+      # 10. 빌드 결과 아티팩트 업로드 (tar.gz)
+      - name: Upload Next.js Deploy Artifact (tar.gz)
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-standalone
+          path: next-standalone.tar.gz
+          retention-days: ${{ steps.retention.outputs.days }}
+
+      # 11. Discord 알림 전송 (성공/실패 관계없이 항상 실행됨)
+      - name: Notify Discord
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"  # success / failure
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"username\": \"Frontend CI\", \"content\": \"🖥️ Frontend CI 결과: **${STATUS}**\n🔗 [${{ github.repository }}@${{ github.ref_name }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}" \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
