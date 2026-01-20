@@ -1,0 +1,85 @@
+# .github/workflows/backend-ci.yml
+
+name: Backend CI
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  push:
+    branches: [ main, develop ]
+jobs:
+  backend-ci:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Make gradlew executable
+        run: chmod +x ./gradlew
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+      - name: Run Unit Tests
+        run: ./gradlew test
+
+      - name: Run Integration Tests (if exists)
+        run: |
+          if ./gradlew -q tasks --all | grep -q "^integrationTest"; then
+            ./gradlew integrationTest
+          else
+            echo "integrationTest task not found. Skipping."
+          fi
+
+      - name: Build bootJar
+        run: ./gradlew bootJar
+
+      - name: Normalize bootJar to app.jar
+        run: |
+          set -e
+          JAR_PATH="$(ls -1 build/libs/*.jar | grep -v -- '-plain\.jar$' | head -n 1)"
+          if [ -z "$JAR_PATH" ]; then
+            echo "No bootJar found"
+            exit 1
+          fi
+          echo "Selected JAR: $JAR_PATH"
+          cp "$JAR_PATH" build/libs/app.jar
+
+      - name: Decide artifact retention days
+        id: retention
+        run: |
+          if [[ "${{ github.base_ref }}" == "main" ]]; then
+            echo "days=30" >> "$GITHUB_OUTPUT"
+          elif [[ "${{ github.base_ref }}" == "develop" ]]; then
+            echo "days=14" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload JAR Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: springboot-jar
+          path: build/libs/app.jar
+          retention-days: ${{ steps.retention.outputs.days }}
+
+      - name: Notify Discord
+        if: always()
+        run: |
+          STATUS="${{ job.status }}"
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"username\": \"Backend CI\", \"content\": \"🚀 Backend CI 결과: **${STATUS}**\n🔗 [${{ github.repository }}@${{ github.ref_name }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})\"}" \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
