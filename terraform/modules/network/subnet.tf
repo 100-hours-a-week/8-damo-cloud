@@ -1,11 +1,3 @@
-terraform {
-  required_providers {
-    aws = {
-      source  = "hashicorp/aws"
-      version = "5.99.1"
-    }
-  }
-}
 # Public subnets (0 ~ N)
 resource "aws_subnet" "public" {
   for_each = var.public_subnets
