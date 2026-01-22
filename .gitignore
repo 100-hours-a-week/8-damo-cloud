@@ -5,3 +5,10 @@
 /httpRequests/
 .idea
 
+*.tfstate
+*.tfstate.backup
+*.tfvars
+*.auto.tfvars
+.terraform/
+.terraform.lock.hcl
+.env*
