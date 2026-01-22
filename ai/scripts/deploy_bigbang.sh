@@ -24,7 +24,8 @@ ECOSYSTEM="$DEPLOY_DIR/ecosystem.ai.config.js"
 
 APP_NAME="fastapi-app"                  # pm2 프로세스명
 PORT="8000"
-HEALTH_URL="http://localhost:${PORT}/ai/"   
+
+HEALTH_URL="http://localhost:${PORT}/health" 
 
 MAX_WAIT=60
 SLEEP=2
@@ -86,7 +87,7 @@ if [ ! -f "$DEPLOY_DIR/requirements.txt" ]; then
 fi
 
 # FastAPI 엔트리 검증
-if [ ! -f "$DEPLOY_DIR/app/main.py" ]; then
+if [ ! -f "$DEPLOY_DIR/main.py" ]; then
   echo "ERROR: main.py not found in $DEPLOY_DIR"
   exit 1
 fi
@@ -133,5 +134,4 @@ fi
 
 # incoming 정리
 rm -f "$INCOMING_TAR" || true
-
 echo "AI 배포 완료"
