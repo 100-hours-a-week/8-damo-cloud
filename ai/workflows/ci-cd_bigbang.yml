@@ -1,0 +1,143 @@
+name: AI CI/CD Pipeline
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [main, develop]
+
+env:
+  HOST: ${{ secrets.AI_PROD_SERVER_HOST }}
+  USER: ${{ secrets.AI_PROD_SERVER_USER }}
+  PORT: ${{ secrets.AI_PROD_SERVER_PORT }}
+  KEY: ${{ secrets.AI_PROD_SERVER_KEY }}
+
+  REMOTE_DIR: /home/ubuntu/opt/ai-prod
+  INCOMING_DIR: /home/ubuntu/opt/ai-prod/incoming
+
+  ARTIFACT_FILE: ai-app.tar.gz
+  DEPLOY_SCRIPT: scripts/deploy_bigbang.sh
+
+jobs:
+  ci:
+    name: CI (test/package)
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        python-version: ["3.12"]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: "pip"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run test
+        run: python -m pytest -q
+
+      - name: Build tar.gz
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+
+          rm -f "${{ env.ARTIFACT_FILE }}"
+          git ls-files -z -- . ':!scripts/**' \
+          | tar --null -T - -czf "${{ env.ARTIFACT_FILE }}"
+
+      - name: Upload bundle to server (SCP)
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          port: ${{ env.PORT }}
+          key: ${{ env.KEY }}
+          source: ${{ env.ARTIFACT_FILE }}
+          target: ${{ env.INCOMING_DIR }}/
+          overwrite: true
+
+      - name: Upload deploy script to remote dir (SCP)
+        if: github.event_name == 'push' && github.ref_name == 'main'
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          port: ${{ env.PORT }}
+          key: ${{ env.KEY }}
+          source: ${{ env.DEPLOY_SCRIPT }}
+          target: ${{ env.REMOTE_DIR }}/
+          overwrite: true
+
+  deploy:
+    needs: ci
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && needs.ci.result == 'success'
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH (run deploy_bigbang.sh)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          port: ${{ env.PORT }}
+          key: ${{ env.KEY }}
+          script_stop: true
+          script: |
+            set -euo pipefail
+
+            mkdir -p "${{ env.INCOMING_DIR }}"
+
+            ART="${{ env.INCOMING_DIR }}/${{ env.ARTIFACT_FILE }}"
+            SCRIPT="${{ env.REMOTE_DIR }}/${{ env.DEPLOY_SCRIPT }}"
+
+            echo "Artifact: ${ART}"
+            echo "Script:   ${SCRIPT}"
+
+            # 파일 존재 확인(원인 바로 보이게)
+            if [ ! -f "${ART}" ]; then
+              echo "ERROR: artifact not found: ${ART}"
+              ls -al "${{ env.INCOMING_DIR }}" || true
+              exit 1
+            fi
+
+            if [ ! -f "${SCRIPT}" ]; then
+              echo "ERROR: deploy script not found: ${SCRIPT}"
+              ls -al "${{ env.REMOTE_DIR }}" || true
+              exit 1
+            fi
+
+            chmod +x "${SCRIPT}"
+            "${SCRIPT}" "${ART}"
+
+
+  notify:
+    name: Notify Discord
+    runs-on: ubuntu-latest
+    needs: [ci, deploy]
+    if: always()
+
+    steps:
+      - name: Send notification
+        run: |
+          CI_RESULT="${{ needs.ci.result }}"
+          DEPLOY_RESULT="${{ needs.deploy.result }}"
+          REF="${{ github.repository }}@${{ github.ref_name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"username\":\"AI CI/CD\",\"content\":\"🖥️ AI CI/CD 결과\\n- CI: **${CI_RESULT}**\\n- Deploy: **${DEPLOY_RESULT}**\\n🔗 [${REF}](${RUN_URL})\"}" \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
