@@ -24,6 +24,7 @@ ECOSYSTEM="$DEPLOY_DIR/ecosystem.ai.config.js"
 
 APP_NAME="fastapi-app"                  # pm2 프로세스명
 PORT="8000"
+
 HEALTH_URL="http://localhost:${PORT}/health" 
 
 MAX_WAIT=60
@@ -95,7 +96,7 @@ fi
 echo "4) PM2로 재기동..."
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 
-# ecosystem가 cwd를 가지고 있어도, 여기서는 DEPLOY_DIR 기준으로 실행하는게 안전
+# ecosystem가 cwd를 가지고 있어도, DEPLOY_DIR 기준으로 실행
 cd "$DEPLOY_DIR"
 pm2 start "$ECOSYSTEM" --only "$APP_NAME" --update-env >/dev/null 2>&1
 pm2 save >/dev/null 2>&1 || true
@@ -133,5 +134,4 @@ fi
 
 # incoming 정리
 rm -f "$INCOMING_TAR" || true
-
 echo "AI 배포 완료"
