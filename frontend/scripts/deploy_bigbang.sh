@@ -14,12 +14,16 @@ set -euo pipefail
 #     package-lock.json    # 있으면 npm ci 사용
 #     next.config.*        # (옵션)
 #     node_modules/        # 서버에서 npm ci로 설치됨
+#   env/
+#     prod.env             # Next가 반영해야 하는 env 파일
 #   backup/
 #     app.prev/            # 이전 app 디렉토리
 #
 # 호출 예:
 #   ./deploy.sh /opt/fe-prod/incoming/next-build.tar.gz
 # =========================
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ENV_FILE="$SCRIPT_DIR/env/prod.env"
 
 BASE_DIR="/home/ubuntu/opt/fe-prod"
 DEPLOY_DIR="$BASE_DIR/app"
@@ -37,6 +41,7 @@ echo "🚀 FE 배포 시작 (non-standalone)"
 echo "Base: $BASE_DIR"
 echo "Deploy: $DEPLOY_DIR"
 echo "Incoming: $INCOMING_TAR"
+echo "Env: $ENV_FILE"
 
 # ---- validate ----
 if [ -z "$INCOMING_TAR" ] || [ ! -f "$INCOMING_TAR" ]; then
@@ -101,6 +106,11 @@ else
   echo "📦 npm install --omit=dev (package-lock.json 없음, HUSKY=0, CI=true)"
   npm install --omit=dev --ignore-scripts
 fi
+
+# ✅ env 로드 (주석/빈줄 무시) + export  ← Spring과 동일
+set -a
+. <(grep -v '^\s*#' "$ENV_FILE" | sed '/^\s*$/d')
+set +a
 
 # Next 실행: npm start (내부적으로 next start)
 NODE20=/home/ubuntu/.nvm/versions/node/v20.20.0/bin/node
