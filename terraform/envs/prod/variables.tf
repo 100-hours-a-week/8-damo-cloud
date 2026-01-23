@@ -32,3 +32,9 @@ variable "instance_key_name" {
   type        = string
   default     = "damo-key"
 }
+
+variable "iam_instance_profile" {
+  description = "IAM instance profile name"
+  type        = string
+  default     = "damo-be-ec2-s3-upload-role"
+}
