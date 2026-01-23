@@ -30,7 +30,7 @@ output "dev_vpc_id" {
 }
 
 output "dev_public_subnet_ids" {
-  value = module.network.private_subnet_ids
+  value = module.network.public_subnet_ids
 }
 
 output "dev_private_subnet_ids" {
