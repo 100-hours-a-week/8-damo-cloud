@@ -3,8 +3,8 @@ module "network" {
 
   name            = "dev"
   vpc_cidr        = var.vpc_cidr
-  public_subnets = var.public_subnets
-  private_subnets  = var.private_subnets
+  public_subnets  = var.public_subnets
+  private_subnets = var.private_subnets
 }
 
 module "security" {
@@ -23,6 +23,7 @@ module "ec2" {
   key_name               = var.instance_key_name
   subnet_id              = element(values(module.network.public_subnet_ids), 0)
   vpc_security_group_ids = [module.security.security_group_id]
+  iam_instance_profile   = var.iam_instance_profile
 }
 
 output "dev_vpc_id" {

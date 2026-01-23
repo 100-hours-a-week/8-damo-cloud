@@ -29,3 +29,8 @@ variable "vpc_security_group_ids" {
   type        = list(string)
   default     = []
 }
+
+variable "iam_instance_profile" {
+  description = "IAM instance profile name"
+  type        = string
+}
