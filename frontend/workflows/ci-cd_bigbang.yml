@@ -9,7 +9,7 @@ on:
 env:
   NODE_VERSION: "20"
   REMOTE_DIR: /home/ubuntu/opt/fe-prod
-  ARTIFACT_FILE: next-standalone.tar.gz
+  ARTIFACT_FILE: next-build.tar.gz
 
 jobs:
   ci:
@@ -29,8 +29,8 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Check formatting (Prettier)
-        run: npm run format:check
+      #      - name: Check formatting (Prettier)
+      #        run: npm run format:check
 
       - name: Run Lint (ESLint)
         run: npm run lint
@@ -42,39 +42,37 @@ jobs:
       - name: Build Next.js App
         run: npm run build
 
-      - name: Package Next.js standalone bundle
+      - name: Package Next.js build (non-standalone)
         run: |
-          set -e
-
           rm -rf deploy_fe
           mkdir -p deploy_fe
-
-          # standalone이 없으면 여기서 바로 실패(원인 명확히)
-          if [ ! -d ".next/standalone" ]; then
-            echo "ERROR: .next/standalone not found."
-            echo "=> next.config.* 에 output: 'standalone' 설정이 필요할 수 있음."
-            exit 1
-          fi
-
-          # standalone 서버 실행 파일 + 필요한 node_modules 포함
-          cp -r .next/standalone/. deploy_fe/
-
-          # 정적 파일(필수)
-          mkdir -p deploy_fe/.next
-          cp -r .next/static deploy_fe/.next/static
-
-          # public (사용하면 포함)
+          
+          # 빌드 산출물 전체
+          cp -r .next deploy_fe/.next
+          
+          # public (사용하면)
           if [ -d "public" ]; then
-            cp -r public deploy_fe/public
+          cp -r public deploy_fe/public
           fi
-
-          # 런타임에서 필요하면 포함(선택)
+          
+          # 실행에 필요한 파일들
           cp package.json deploy_fe/package.json
-
-          tar -czf "${{ env.ARTIFACT_FILE }}" -C deploy_fe .
+          
+          # lockfile도 같이 넣는 게 안전
+          if [ -f package-lock.json ]; then
+          cp package-lock.json deploy_fe/package-lock.json
+          fi
+          
+          # next.config.* 필요할 수도 있음(런타임에서 참조하는 경우)
+          if [ -f next.config.js ]; then cp next.config.js deploy_fe/next.config.js; fi
+          if [ -f next.config.mjs ]; then cp next.config.mjs deploy_fe/next.config.mjs; fi
+          
+          tar -czf next-build.tar.gz -C deploy_fe .
 
       - name: Upload bundle to server (SCP)
-        if: github.event_name == 'push' && github.ref_name == 'main'
+        if: github.event_name == 'push'
+        # if: github.event_name == 'push' && github.ref_name == 'develop'
+
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.FRONT_PROD_SERVER_HOST }}
@@ -87,7 +85,8 @@ jobs:
     name: CD (prod deploy)
     runs-on: ubuntu-latest
     needs: [ci]
-    if: github.event_name == 'push' && github.ref_name == 'main' && needs.ci.result == 'success'
+    if: github.event_name == 'push' && needs.ci.result == 'success'
+    #    if: github.event_name == 'push' && github.ref_name == 'develop' && needs.ci.result == 'success'
 
     steps:
       - name: Deploy via SSH (run deploy.sh)

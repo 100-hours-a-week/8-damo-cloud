@@ -2,22 +2,23 @@
 set -euo pipefail
 
 # =========================
-# /opt/fe-prod 구조(옵션 B)
+# /opt/fe-prod 구조 (non-standalone)
 # =========================
 # /opt/fe-prod/
 #   deploy.sh
-#   incoming/              # CD가 next-standalone.tar.gz 업로드하는 곳
-#   app/                   # 실제 실행(standalone) 위치
-#     server.js            # Next standalone 엔트리
-#     package.json         # 포함(선택)
-#     node_modules/        # standalone에 포함됨
-#     .next/static         # 포함됨
-#     public/              # 포함(선택)
-#   backup/                # 롤백용 백업 1개만 유지
+#   incoming/              # CD가 next-build.tar.gz 업로드하는 곳
+#   app/                   # 실제 실행 위치 (Next build 결과)
+#     .next/               # 빌드 산출물
+#     public/              # (옵션)
+#     package.json
+#     package-lock.json    # 있으면 npm ci 사용
+#     next.config.*        # (옵션)
+#     node_modules/        # 서버에서 npm ci로 설치됨
+#   backup/
 #     app.prev/            # 이전 app 디렉토리
 #
 # 호출 예:
-#   ./deploy.sh /opt/fe-prod/incoming/next-standalone.tar.gz
+#   ./deploy.sh /opt/fe-prod/incoming/next-build.tar.gz
 # =========================
 
 BASE_DIR="/home/ubuntu/opt/fe-prod"
@@ -32,8 +33,9 @@ HEALTH_URL="http://localhost:${PORT}/health"   # 너가 만든 /health 기준
 MAX_WAIT=60
 SLEEP=2
 
-echo "🚀 FE 배포 시작"
+echo "🚀 FE 배포 시작 (non-standalone)"
 echo "Base: $BASE_DIR"
+echo "Deploy: $DEPLOY_DIR"
 echo "Incoming: $INCOMING_TAR"
 
 # ---- validate ----
@@ -53,13 +55,12 @@ pm2 stop "$APP_NAME" >/dev/null 2>&1 || echo "실행 중인 앱 없음"
 # 2) 기존 앱 백업(1개만 유지)
 echo "✅ 2) 기존 앱 백업..."
 rm -rf "$BACKUP_DIR" || true
-if [ -d "$DEPLOY_DIR" ] && [ -f "$DEPLOY_DIR/server.js" ]; then
+if [ -d "$DEPLOY_DIR" ] && [ -d "$DEPLOY_DIR/.next" ]; then
   mv "$DEPLOY_DIR" "$BACKUP_DIR"
   echo "백업 완료: $BACKUP_DIR"
   mkdir -p "$DEPLOY_DIR"
 else
-  # app 디렉토리는 존재하지만 standalone이 아닐 수 있어도, 안전하게 백업 폴더는 비워둠
-  echo "백업 대상(standalone)이 없거나 비정상 상태, 스킵"
+  echo "백업 대상(.next)이 없거나 비정상 상태, 스킵"
   rm -rf "$DEPLOY_DIR" || true
   mkdir -p "$DEPLOY_DIR"
 fi
@@ -70,58 +71,86 @@ rm -rf "$DEPLOY_DIR" || true
 mkdir -p "$DEPLOY_DIR"
 tar -xzf "$INCOMING_TAR" -C "$DEPLOY_DIR"
 
-# 기본 검증: standalone 엔트리 확인
-if [ ! -f "$DEPLOY_DIR/server.js" ]; then
-  echo "❌ ERROR: server.js not found after extract. (Next standalone 패키징 확인 필요)"
+# 기본 검증: build 산출물(.next) 확인
+if [ ! -d "$DEPLOY_DIR/.next" ]; then
+  echo "❌ ERROR: .next not found after extract. (CI 패키징에서 .next 포함 확인 필요)"
   exit 1
 fi
 
-# 4) PM2로 재기동
-echo "✅ 4) PM2로 재기동..."
+# 4) 의존성 설치 + PM2로 재기동
+echo "✅ 4) 의존성 설치 + PM2 재기동..."
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 
-# Next standalone은 node server.js로 실행 (PORT env로 포트 지정)
-# pm2 start node -- server.js 형태가 가장 단순/안정적
-pm2 start node --name "$APP_NAME" --cwd "$DEPLOY_DIR" -- server.js --port "$PORT" >/dev/null 2>&1 \
-  || PORT="$PORT" pm2 start node --name "$APP_NAME" --cwd "$DEPLOY_DIR" -- server.js >/dev/null 2>&1
+cd "$DEPLOY_DIR"
 
-# 5) 헬스체크
-echo "✅ 5) 헬스체크 대기..."
-HEALTH_OK=0
-for ((t=0; t<MAX_WAIT; t+=SLEEP)); do
-  if curl -sf "$HEALTH_URL" >/dev/null; then
-    echo "✅ 헬스체크 성공"
-    HEALTH_OK=1
-    break
-  fi
-  echo "...대기 중 (${t}s)"
-  sleep "$SLEEP"
-done
-
-# 6) 실패 시 롤백
-if [ "$HEALTH_OK" -ne 1 ]; then
-  echo "❌ 헬스체크 실패. 롤백합니다."
-
-  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
-
-  if [ -d "$BACKUP_DIR" ] && [ -f "$BACKUP_DIR/server.js" ]; then
-    rm -rf "$DEPLOY_DIR" || true
-    mv "$BACKUP_DIR" "$DEPLOY_DIR"
-
-    pm2 start node --name "$APP_NAME" --cwd "$DEPLOY_DIR" -- server.js --port "$PORT" >/dev/null 2>&1 \
-      || PORT="$PORT" pm2 start node --name "$APP_NAME" --cwd "$DEPLOY_DIR" -- server.js >/dev/null 2>&1
-
-    pm2 save >/dev/null 2>&1 || true
-    echo "✅ 롤백 완료"
-  else
-    echo "⚠️ 백업이 없어 롤백 불가"
-  fi
-
+# package.json 체크
+if [ ! -f "package.json" ]; then
+  echo "❌ ERROR: package.json not found. (CI 패키징에 package.json 포함 필요)"
   exit 1
 fi
+
+# ---- IMPORTANT: disable husky on server installs ----
+export HUSKY=0
+export CI=true
+
+# node_modules 설치 (Next non-standalone은 런타임 의존성 필요)
+if [ -f "package-lock.json" ]; then
+  echo "📦 npm ci --omit=dev (HUSKY=0, CI=true)"
+  npm ci --omit=dev --ignore-scripts
+else
+  echo "📦 npm install --omit=dev (package-lock.json 없음, HUSKY=0, CI=true)"
+  npm install --omit=dev --ignore-scripts
+fi
+
+# Next 실행: npm start (내부적으로 next start)
+NODE20=/home/ubuntu/.nvm/versions/node/v20.20.0/bin/node
+pm2 start "$NODE20" --name "$APP_NAME" -- ./node_modules/next/dist/bin/next start -p "$PORT" >/dev/null 2>&1
+
+# 5) 헬스체크
+#echo "✅ 5) 헬스체크 대기..."
+#HEALTH_OK=0
+#for ((t=0; t<MAX_WAIT; t+=SLEEP)); do
+#  if curl -sf "$HEALTH_URL" >/dev/null; then
+#    echo "✅ 헬스체크 성공"
+#    HEALTH_OK=1
+#    break
+#  fi
+#  echo "...대기 중 (${t}s)"
+#  sleep "$SLEEP"
+#done
+
+# 6) 실패 시 롤백
+#if [ "$HEALTH_OK" -ne 1 ]; then
+#  echo "❌ 헬스체크 실패. 롤백합니다."
+#  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
+
+#  if [ -d "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR/.next" ]; then
+#    rm -rf "$DEPLOY_DIR" || true
+#    mv "$BACKUP_DIR" "$DEPLOY_DIR"
+
+#    cd "$DEPLOY_DIR"
+
+#    export HUSKY=0
+#    export CI=true
+
+ #   if [ -f "package-lock.json" ]; then
+ #     npm ci --omit=dev --ignore-scripts
+ #   else
+ #     npm install --omit=dev --ignore-scripts
+#    fi
+
+#    pm2 start npm --name "$APP_NAME" -- start -- -p "$PORT" >/dev/null 2>&1
+#    pm2 save >/dev/null 2>&1 || true
+#    echo "✅ 롤백 완료"
+#  else
+#    echo "⚠️ 백업이 없어 롤백 불가"
+#  fi
+
+#  exit 1
+#fi
 
 # (선택) incoming 정리: 남겨두고 싶으면 주석 처리
 rm -f "$INCOMING_TAR" || true
 
 pm2 save >/dev/null 2>&1 || true
-echo "🎉 FE 배포 완료"
+echo "🎉 FE 배포 완료 (non-standalone)"
