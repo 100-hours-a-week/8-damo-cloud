@@ -112,9 +112,15 @@ set -a
 . <(grep -v '^\s*#' "$ENV_FILE" | sed '/^\s*$/d')
 set +a
 
+# ✅ (선택) env 적용 확인 로그 (민감값이면 주석 처리)
+echo "✅ env loaded. (example) NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-<unset>}"
+echo "✅ env loaded: NEXT_PUBLIC_KAKAO_CLIENT_ID=${NEXT_PUBLIC_KAKAO_CLIENT_ID:-<unset>} | NEXT_PUBLIC_KAKAO_REDIRECT_URI=${NEXT_PUBLIC_KAKAO_REDIRECT_URI:-<unset>} | NEXT_PUBLIC_API_BASE_URL=${NEXT_PUBLIC_API_BASE_URL:-<unset>}"
+
+
+
 # Next 실행: npm start (내부적으로 next start)
 NODE20=/home/ubuntu/.nvm/versions/node/v20.20.0/bin/node
-pm2 start "$NODE20" --name "$APP_NAME" -- ./node_modules/next/dist/bin/next start -p "$PORT" >/dev/null 2>&1
+pm2 start "$NODE20" --name "$APP_NAME" --update-env -- ./node_modules/next/dist/bin/next start -p "$PORT" >/dev/null 2>&1
 
 # 5) 헬스체크
 #echo "✅ 5) 헬스체크 대기..."
