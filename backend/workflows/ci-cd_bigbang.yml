@@ -67,10 +67,9 @@ jobs:
           echo "Selected JAR: $JAR_PATH"
           cp "$JAR_PATH" "build/libs/${{ env.JAR_NAME }}"
 
-      # =========================
       # Upload
-      # =========================
       - name: Prepare dist/app.jar
+        if: github.event_name == 'push'
         #        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
         run: |
           mkdir -p dist
