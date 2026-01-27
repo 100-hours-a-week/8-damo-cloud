@@ -1,0 +1,74 @@
+name: Frontend Rollback (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      # 임시 / 추후에는 필요
+      target:
+        description: "Rollback target environment"
+        required: true
+        default: "prod"
+        type: choice
+        options:
+          - prod
+          - dev
+
+      reason:
+        description: "Rollback reason (optional)"
+        required: false
+        default: "manual rollback"
+
+env:
+  REMOTE_DIR: /home/ubuntu/opt/fe-prod
+  ROLLBACK_SCRIPT: rollback.sh
+
+jobs:
+  rollback:
+    name: Rollback
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Rollback via SSH (run rollback.sh)
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.FRONT_PROD_SERVER_HOST }}
+          username: ${{ secrets.SSH_USERNAME }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script_stop: true
+          command_timeout: 10m
+          script: |
+            set -euo pipefail
+
+            cd ${{ env.REMOTE_DIR }}
+
+            echo "== Frontend Rollback =="
+            echo "Reason: ${{ github.event.inputs.reason }}"
+            echo "Rollback script: ${{ env.REMOTE_DIR }}/${{ env.ROLLBACK_SCRIPT }}"
+            echo
+
+            if [ ! -f "${{ env.ROLLBACK_SCRIPT }}" ]; then
+              echo "ERROR: rollback.sh not found"
+              exit 1
+            fi
+
+            chmod +x "${{ env.ROLLBACK_SCRIPT }}"
+            bash "./${{ env.ROLLBACK_SCRIPT }}"
+
+  notify:
+    name: Notify Discord
+    runs-on: ubuntu-latest
+    needs: [rollback]
+    if: always()
+
+    steps:
+      - name: Send notification
+        run: |
+          RESULT="${{ needs.rollback.result }}"
+          REF="${{ github.repository }}@${{ github.ref_name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          REASON="${{ github.event.inputs.reason }}"
+
+          curl -H "Content-Type: application/json" \
+               -X POST \
+               -d "{\"username\":\"Frontend Rollback\",\"content\":\"🧯 Frontend Rollback 실행 결과\\n- Rollback: **${RESULT}**\\n- Reason: ${REASON}\\n🔗 [${REF}](${RUN_URL})\"}" \
+               ${{ secrets.DISCORD_WEBHOOK_URL }}
