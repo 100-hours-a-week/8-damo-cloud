@@ -24,8 +24,7 @@ ECOSYSTEM="$DEPLOY_DIR/ecosystem.ai.config.js"
 
 APP_NAME="fastapi-app"                  # pm2 프로세스명
 PORT="8000"
-
-HEALTH_URL="http://localhost:${PORT}/health" 
+HEALTH_URL="http://localhost:${PORT}/ai/api/health" 
 
 MAX_WAIT=60
 SLEEP=2
@@ -40,11 +39,6 @@ if [ -z "$INCOMING_TAR" ] || [ ! -f "$INCOMING_TAR" ]; then
   echo "Usage: $0 <path-to-incoming-tar.gz>"
   echo "Error: tar not found: $INCOMING_TAR"
   exit 2
-fi
-
-if [ ! -f "$ECOSYSTEM" ]; then
-  echo "ERROR: ecosystem file not found: $ECOSYSTEM"
-  exit 1
 fi
 
 mkdir -p "$BASE_DIR/incoming" "$BASE_DIR/backup"
@@ -86,17 +80,34 @@ if [ ! -f "$DEPLOY_DIR/requirements.txt" ]; then
   exit 1
 fi
 
+if [ ! -f "$DEPLOY_DIR/ecosystem.ai.config.js" ]; then
+  echo "ERROR: ecosystem.ai.config.js not found in $DEPLOY_DIR"
+  ls -al "$DEPLOY_DIR" || true
+  exit 1
+fi
+ECOSYSTEM="$DEPLOY_DIR/ecosystem.ai.config.js"
+
 # FastAPI 엔트리 검증
 if [ ! -f "$DEPLOY_DIR/main.py" ]; then
   echo "ERROR: main.py not found in $DEPLOY_DIR"
   exit 1
 fi
 
+# 3-3) deps install (venv)
+echo "3-3) venv 생성 및 의존성 설치..."
+cd "$DEPLOY_DIR"
+
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -U pip
+pip install -r requirements.txt
+deactivate
+
 # 4) PM2 재기동 
 echo "4) PM2로 재기동..."
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 
-# ecosystem가 cwd를 가지고 있어도, DEPLOY_DIR 기준으로 실행
+# ecosystem가 cwd를 가지고 있어도, 여기서는 DEPLOY_DIR 기준으로 실행하는게 안전
 cd "$DEPLOY_DIR"
 pm2 start "$ECOSYSTEM" --only "$APP_NAME" --update-env >/dev/null 2>&1
 pm2 save >/dev/null 2>&1 || true
@@ -134,4 +145,5 @@ fi
 
 # incoming 정리
 rm -f "$INCOMING_TAR" || true
+
 echo "AI 배포 완료"
