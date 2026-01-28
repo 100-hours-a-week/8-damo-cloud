@@ -16,7 +16,7 @@ env:
   INCOMING_DIR: /home/ubuntu/opt/ai-prod/incoming
 
   ARTIFACT_FILE: ai-app.tar.gz
-  DEPLOY_SCRIPT: scripts/deploy_bigbang.sh
+  DEPLOY_SCRIPT: app/scripts/deploy_bigbang.sh
 
 jobs:
   ci:
@@ -75,18 +75,6 @@ jobs:
         target: ${{ env.INCOMING_DIR }}/
         overwrite: true
 
-    - name: Upload deploy script to remote dir (SCP)
-      if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
-      uses: appleboy/scp-action@v0.1.7
-      with:
-        host: ${{ env.HOST }}
-        username: ${{ env.USER }}
-        port: ${{ env.PORT }}
-        key: ${{ env.KEY }}
-        source: ${{ env.DEPLOY_SCRIPT }}
-        target: ${{ env.REMOTE_DIR }}/
-        overwrite: true
-
   deploy:
     needs: ci
     runs-on: ubuntu-latest
@@ -108,12 +96,13 @@ jobs:
             set -euo pipefail
 
             mkdir -p "${{ env.INCOMING_DIR }}"
+            mkdir -p "${{ env.REMOTE_DIR }}/app"
 
             ART="${{ env.INCOMING_DIR }}/${{ env.ARTIFACT_FILE }}"
-            SCRIPT="${{ env.REMOTE_DIR }}/${{ env.DEPLOY_SCRIPT }}"
+            APP_DIR="${{ env.REMOTE_DIR }}/app"
 
             echo "Artifact: ${ART}"
-            echo "Script:   ${SCRIPT}"
+            echo "App dir: ${APP_DIR}"
 
             # 파일 존재 확인(원인 바로 보이게)
             if [ ! -f "${ART}" ]; then
@@ -122,9 +111,18 @@ jobs:
               exit 1
             fi
 
+            # app/에 tar.gz 풀기
+            tar -xzf "${ART}" -C "${APP_DIR}"
+
+            # app/ 아래에 scripts 생겼는지 확인
+            SCRIPT="${{ env.REMOTE_DIR }}/${{ env.DEPLOY_SCRIPT }}"
+            echo "Script: ${SCRIPT}"
+
             if [ ! -f "${SCRIPT}" ]; then
               echo "ERROR: deploy script not found: ${SCRIPT}"
-              ls -al "${{ env.REMOTE_DIR }}" || true
+              ls -al "${APP_DIR}" || true
+              echo "Listing scripts dir:"
+              ls -al "${APP_DIR}/scripts" || true
               exit 1
             fi
 
