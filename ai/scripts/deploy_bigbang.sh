@@ -102,6 +102,8 @@ source .venv/bin/activate
 pip install -U pip
 pip install -r requirements.txt
 deactivate
+# curl -sSL https://install.python-poetry.org | python3 -
+# poetry install
 
 # 4) PM2 재기동 
 echo "4) PM2로 재기동..."

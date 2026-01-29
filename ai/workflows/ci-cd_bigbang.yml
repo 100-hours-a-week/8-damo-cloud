@@ -18,6 +18,10 @@ env:
   ARTIFACT_FILE: ai-app.tar.gz
   DEPLOY_SCRIPT: app/scripts/deploy_bigbang.sh
 
+  GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }} 
+  MONGODB_URI: ${{ secrets.MONGODB_URI }}
+  DB_NAME: ${{ secrets.DB_NAME }}
+
 jobs:
   ci:
     runs-on: ubuntu-latest
@@ -52,16 +56,32 @@ jobs:
         set -euo pipefail
 
         rm -f "${{ env.ARTIFACT_FILE }}"
-        
+        rm -f .env
+
+        # .env 생성
+        install -m 600 /dev/null .env
+        cat > .env <<EOF
+        GOOGLE_API_KEY=${{ secrets.GOOGLE_API_KEY }}
+        MONGODB_URI=${{ secrets.MONGODB_URI }}
+        DB_NAME=${{ secrets.DB_NAME }}
+        EOF
+
+        umask 022
         tar -czf "${{ env.ARTIFACT_FILE }}" \
-        ecosystem.ai.config.js \
-        src \
-        main.py \
-        requirements.txt \
-        run.prod.sh \
-        run.dev.sh \
-        run.test.sh \
-        scripts
+          .env \
+          ecosystem.ai.config.js \
+          src \
+          main.py \
+          requirements.txt \
+          run.prod.sh \
+          run.dev.sh \
+          run.test.sh \
+          scripts \
+          pyproject.toml
+
+        chmod 644 ai-app.tar.gz
+        rm -f .env
+
 
     - name: Upload bundle to server (SCP)
       if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
