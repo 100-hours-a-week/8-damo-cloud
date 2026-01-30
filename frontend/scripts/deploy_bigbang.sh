@@ -32,7 +32,7 @@ INCOMING_TAR="${1:-}"                # 인자로 받은 새 tar 경로
 
 APP_NAME="next-app"                  # pm2 프로세스명
 PORT="3000"
-HEALTH_URL="http://localhost:${PORT}/health"   # 너가 만든 /health 기준
+HEALTH_URL="http://localhost:${PORT}/api/health"
 
 MAX_WAIT=60
 SLEEP=2
@@ -123,47 +123,47 @@ NODE20=/home/ubuntu/.nvm/versions/node/v20.20.0/bin/node
 pm2 start "$NODE20" --name "$APP_NAME" --update-env -- ./node_modules/next/dist/bin/next start -p "$PORT" >/dev/null 2>&1
 
 # 5) 헬스체크
-#echo "✅ 5) 헬스체크 대기..."
-#HEALTH_OK=0
-#for ((t=0; t<MAX_WAIT; t+=SLEEP)); do
-#  if curl -sf "$HEALTH_URL" >/dev/null; then
-#    echo "✅ 헬스체크 성공"
-#    HEALTH_OK=1
-#    break
-#  fi
-#  echo "...대기 중 (${t}s)"
-#  sleep "$SLEEP"
-#done
+echo "✅ 5) 헬스체크 대기..."
+HEALTH_OK=0
+for ((t=0; t<MAX_WAIT; t+=SLEEP)); do
+  if curl -sf "$HEALTH_URL" >/dev/null; then
+    echo "✅ 헬스체크 성공"
+    HEALTH_OK=1
+    break
+  fi
+  echo "...대기 중 (${t}s)"
+  sleep "$SLEEP"
+done
 
 # 6) 실패 시 롤백
-#if [ "$HEALTH_OK" -ne 1 ]; then
-#  echo "❌ 헬스체크 실패. 롤백합니다."
-#  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
+if [ "$HEALTH_OK" -ne 1 ]; then
+  echo "❌ 헬스체크 실패. 롤백합니다."
+  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 
-#  if [ -d "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR/.next" ]; then
-#    rm -rf "$DEPLOY_DIR" || true
-#    mv "$BACKUP_DIR" "$DEPLOY_DIR"
+  if [ -d "$BACKUP_DIR" ] && [ -d "$BACKUP_DIR/.next" ]; then
+    rm -rf "$DEPLOY_DIR" || true
+    mv "$BACKUP_DIR" "$DEPLOY_DIR"
 
-#    cd "$DEPLOY_DIR"
+    cd "$DEPLOY_DIR"
 
-#    export HUSKY=0
-#    export CI=true
+    export HUSKY=0
+    export CI=true
 
- #   if [ -f "package-lock.json" ]; then
- #     npm ci --omit=dev --ignore-scripts
- #   else
- #     npm install --omit=dev --ignore-scripts
-#    fi
+    if [ -f "package-lock.json" ]; then
+      npm ci --omit=dev --ignore-scripts
+    else
+      npm install --omit=dev --ignore-scripts
+    fi
 
-#    pm2 start npm --name "$APP_NAME" -- start -- -p "$PORT" >/dev/null 2>&1
-#    pm2 save >/dev/null 2>&1 || true
-#    echo "✅ 롤백 완료"
-#  else
-#    echo "⚠️ 백업이 없어 롤백 불가"
-#  fi
+    pm2 start npm --name "$APP_NAME" -- start -- -p "$PORT" >/dev/null 2>&1
+    pm2 save >/dev/null 2>&1 || true
+    echo "✅ 롤백 완료"
+  else
+    echo "⚠️ 백업이 없어 롤백 불가"
+  fi
 
-#  exit 1
-#fi
+  exit 1
+fi
 
 # (선택) incoming 정리: 남겨두고 싶으면 주석 처리
 rm -f "$INCOMING_TAR" || true
