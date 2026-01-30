@@ -26,7 +26,7 @@ TARGET_JAR="$DEPLOY_DIR/app.jar"
 
 APP_NAME="spring-app"                 # pm2 프로세스명
 PORT="8080"
-HEALTH_URL="http://localhost:${PORT}/health"
+HEALTH_URL="http://localhost:${PORT}/api/healthy"
 
 MAX_WAIT=60
 SLEEP=2
@@ -71,35 +71,35 @@ echo "✅ 4) PM2로 재기동..."
 pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 pm2 start java --name "$APP_NAME" --cwd "$DEPLOY_DIR" -- -jar "$TARGET_JAR"
 
-#echo "✅ 5) 헬스체크 대기..."
-#HEALTH_OK=0
-#for ((t=0; t<MAX_WAIT; t+=SLEEP)); do
-#  if curl -sf "$HEALTH_URL" >/dev/null; then
-#    echo "헬스체크 성공"
-#    HEALTH_OK=1
-#    break
-#  fi
-#  echo "...대기 중 (${t}s)"
-#  sleep "$SLEEP"
-#done
+echo "✅ 5) 헬스체크 대기..."
+HEALTH_OK=0
+for ((t=0; t<MAX_WAIT; t+=SLEEP)); do
+  if curl -sf "$HEALTH_URL" >/dev/null; then
+    echo "헬스체크 성공"
+    HEALTH_OK=1
+    break
+  fi
+  echo "...대기 중 (${t}s)"
+  sleep "$SLEEP"
+done
 
-#if [ "$HEALTH_OK" -ne 1 ]; then
-#  echo "❌ 헬스체크 실패. 롤백합니다."
+if [ "$HEALTH_OK" -ne 1 ]; then
+  echo "❌ 헬스체크 실패. 롤백합니다."
 
-#  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
+  pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 
-#  if [ -f "$BACKUP_JAR" ]; then
-#    cp -f "$BACKUP_JAR" "$TARGET_JAR"
-#    chmod 755 "$TARGET_JAR"
-#    pm2 start java --name "$APP_NAME" --cwd "$DEPLOY_DIR" -- -jar "$TARGET_JAR"
-#    pm2 save >/dev/null 2>&1 || true
-#    echo "✅ 롤백 완료"
-#  else
-#    echo "⚠️ 백업 jar가 없어 롤백 불가"
-#  fi
+  if [ -f "$BACKUP_JAR" ]; then
+    cp -f "$BACKUP_JAR" "$TARGET_JAR"
+    chmod 755 "$TARGET_JAR"
+    pm2 start java --name "$APP_NAME" --cwd "$DEPLOY_DIR" -- -jar "$TARGET_JAR"
+    pm2 save >/dev/null 2>&1 || true
+    echo "✅ 롤백 완료"
+  else
+    echo "⚠️ 백업 jar가 없어 롤백 불가"
+  fi
 
-#  exit 1
-#fi
+  exit 1
+fi
 
 # (선택) incoming 정리: 남겨두고 싶으면 주석 처리
 rm -f "$INCOMING_JAR" || true
