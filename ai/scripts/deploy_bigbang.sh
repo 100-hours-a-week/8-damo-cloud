@@ -5,7 +5,9 @@ set -euo pipefail
 # /opt/ai-prod 구조
 # =========================
 # /opt/ai-prod/
-#   deploy.sh
+#   scripts/
+#     deploy.sh
+#     rollback.sh
 #   incoming/              # CD가 ai-app.tar.gz 업로드하는 곳
 #   backup/                # 롤백용 백업 1개만 유지
 #     app.prev/            # 이전 app 디렉토리
@@ -74,6 +76,28 @@ if [ "$TOP_COUNT" -eq 1 ]; then
   fi
 fi
 
+# env 주입
+ENV_SRC="$BASE_DIR/.env"
+ENV_DST="$DEPLOY_DIR/.env"
+
+if [ ! -f "$ENV_SRC" ]; then
+  echo "ERROR: env file not found: $ENV_SRC"
+  echo "Creat it on server and set permission: $ENV_SRC"
+  exit 1
+fi
+
+# 권한 체크
+PERM="$(stat -c %a "$ENV_SRC")"
+if [ "$PERM" -gt 600 ]; then
+  echo "ERROR: $ENV_SRC permission too open ($PERM)".
+  exit 1
+fi
+
+# app으로 복사
+install -m 600 "$ENV_SRC" "$ENV_DST"
+echo "Injected env: $ENV_DST"
+
+
 # 3-2) 최소 검증 
 if [ ! -f "$DEPLOY_DIR/requirements.txt" ]; then
   echo "ERROR: requirements.txt not found in $DEPLOY_DIR"
@@ -111,6 +135,11 @@ pm2 delete "$APP_NAME" >/dev/null 2>&1 || true
 
 # ecosystem가 cwd를 가지고 있어도, 여기서는 DEPLOY_DIR 기준으로 실행하는게 안전
 cd "$DEPLOY_DIR"
+
+set -a
+. <(grep -v '^\s*#' "$ENV_DST" | sed '/^\s*$/d')
+set +a
+
 pm2 start "$ECOSYSTEM" --only "$APP_NAME" --update-env >/dev/null 2>&1
 pm2 save >/dev/null 2>&1 || true
 
