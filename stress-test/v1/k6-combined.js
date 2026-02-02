@@ -2,7 +2,7 @@
  * 통합 부하 테스트 (S1 + S2)
  *
  * 실제 사용자 흐름 시뮬레이션:
- * 1. Access Token 발급 (reissue)
+ * 1. setup()에서 테스트용 Access Token 발급
  * 2. 그룹원들이 투표 (attendance-vote)
  * 3. 투표 완료 후 추천 결과 확인/재추천 (recommend-restaurant/refresh)
  *
@@ -14,13 +14,12 @@ import { check, sleep, group } from 'k6';
 import { Rate, Trend, Counter } from 'k6/metrics';
 import { SharedArray } from 'k6/data';
 
-const BASE_URL = 'https://damo.today';
+const BASE_URL = 'https://damo.today/api/v1';
 
 // Custom metrics
 const failRate = new Rate('fail_rate');
 const voteDuration = new Trend('vote_duration', true);
 const recommendDuration = new Trend('recommend_duration', true);
-const reissueDuration = new Trend('reissue_duration', true);
 const totalRequests = new Counter('total_requests');
 
 // Load test fixtures
@@ -64,80 +63,80 @@ export const options = {
 
     // 재추천 API
     'recommend_duration': ['p(95)<3000', 'p(99)<6000'], // p95 < 3s, p99 < 6s
-
-    // 토큰 재발급
-    'reissue_duration': ['p(95)<500', 'p(99)<1000'],    // p95 < 500ms, p99 < 1s
   },
 };
 
-// 사용자별 Access Token 캐시
-const accessTokens = {};
-
 /**
- * Refresh Token으로 Access Token 발급
+ * Setup: 테스트 시작 전 각 사용자별 Access Token 발급
  */
-function getAccessToken(user) {
-  if (accessTokens[user.userId]) {
-    return accessTokens[user.userId];
+export function setup() {
+  console.log('Setting up: Issuing access tokens for all users...');
+
+  const tokenMap = {};
+
+  for (const user of users) {
+    const res = http.post(
+      `${BASE_URL}/auth/test/${user.userId}`,
+      null,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        tags: { name: 'setup-token' },
+      }
+    );
+
+    if (res.status === 200 || res.status === 204) {
+      // 쿠키에서 access_token 추출
+      const cookies = res.cookies;
+      if (cookies && cookies.access_token && cookies.access_token.length > 0) {
+        tokenMap[user.userId] = cookies.access_token[0].value;
+        console.log(`Token issued for user ${user.userId}`);
+      } else {
+        // 응답 본문에서 추출 시도
+        try {
+          const body = JSON.parse(res.body);
+          tokenMap[user.userId] = body.data?.accessToken || body.accessToken;
+          console.log(`Token issued for user ${user.userId} (from body)`);
+        } catch (e) {
+          console.error(`Failed to get token for user ${user.userId}: no token in cookies or body`);
+        }
+      }
+    } else {
+      console.error(`Failed to issue token for user ${user.userId}: ${res.status}`);
+    }
   }
 
-  const startTime = Date.now();
-
-  const res = http.post(
-    `${BASE_URL}/auth/reissue`,
-    null,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': `refreshToken=${user.refreshToken}`,
-      },
-      tags: { name: 'reissue' },
-    }
-  );
-
-  const duration = Date.now() - startTime;
-  reissueDuration.add(duration);
-  totalRequests.add(1);
-
-  if (res.status === 200) {
-    try {
-      const body = JSON.parse(res.body);
-      accessTokens[user.userId] = body.data?.accessToken || body.accessToken;
-      return accessTokens[user.userId];
-    } catch (e) {
-      console.error(`Failed to parse reissue response: ${e}`);
-    }
-  }
-
-  failRate.add(res.status >= 500);
-  return null;
+  console.log(`Setup complete: ${Object.keys(tokenMap).length} tokens issued`);
+  return { tokenMap };
 }
 
 /**
- * S1: 투표 시나리오
+ * S1: 투표 시나리오 (ATTENDANCE_VOTING 상태인 그룹 100 사용)
  */
-export function voteScenario() {
-  const user = users[Math.floor(Math.random() * users.length)];
+export function voteScenario(data) {
+  // groupId 100 (diningId 500) 사용자만 사용 - ATTENDANCE_VOTING 상태
+  const voteUsers = users.filter(u => u.groupId === 100);
+  const user = voteUsers[Math.floor(Math.random() * voteUsers.length)];
+  const accessToken = data.tokenMap[user.userId];
+
+  if (!accessToken) {
+    console.error(`No token for user ${user.userId}`);
+    failRate.add(1);
+    return;
+  }
 
   group('vote_flow', function () {
-    // 1. Access Token 획득
-    const accessToken = getAccessToken(user);
-    if (!accessToken) {
-      failRate.add(1);
-      return;
-    }
-
-    // 2. 투표 실행
     const url = `${BASE_URL}/groups/${user.groupId}/dining/${user.diningId}/attendance-vote`;
 
+    // 90% 참석, 10% 불참
     const payload = JSON.stringify({
-      isAttending: Math.random() > 0.1, // 90% 참석
-      preferredFood: ['한식', '중식', '일식', '양식', '아시안'][Math.floor(Math.random() * 5)],
+      attendanceVoteStatus: Math.random() > 0.1 ? 'ATTEND' : 'NON_ATTEND',
     });
 
     const startTime = Date.now();
 
-    const res = http.post(url, payload, {
+    const res = http.patch(url, payload, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${accessToken}`,
@@ -162,22 +161,21 @@ export function voteScenario() {
 }
 
 /**
- * S2: 재추천 시나리오
+ * S2: 재추천 시나리오 (RESTAURANT_VOTING 상태인 그룹 101 사용)
  */
-export function recommendScenario() {
-  // HOST만 재추천 가능
-  const hostUsers = users.filter(u => u.role === 'HOST');
-  const user = hostUsers[Math.floor(Math.random() * hostUsers.length)];
+export function recommendScenario(data) {
+  // groupId 101 (diningId 501)의 LEADER만 사용 - RESTAURANT_VOTING 상태
+  const leaderUsers = users.filter(u => u.groupId === 101 && u.role === 'LEADER');
+  const user = leaderUsers[Math.floor(Math.random() * leaderUsers.length)];
+  const accessToken = data.tokenMap[user.userId];
+
+  if (!accessToken) {
+    console.error(`No token for user ${user.userId}`);
+    failRate.add(1);
+    return;
+  }
 
   group('recommend_flow', function () {
-    // 1. Access Token 획득
-    const accessToken = getAccessToken(user);
-    if (!accessToken) {
-      failRate.add(1);
-      return;
-    }
-
-    // 2. 재추천 실행
     const url = `${BASE_URL}/groups/${user.groupId}/dining/${user.diningId}/recommend-restaurant/refresh`;
 
     const startTime = Date.now();

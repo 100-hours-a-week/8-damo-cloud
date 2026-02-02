@@ -18,7 +18,7 @@ import { check, sleep } from 'k6';
 import { Rate, Trend } from 'k6/metrics';
 import { SharedArray } from 'k6/data';
 
-const BASE_URL = 'https://damo.today';
+const BASE_URL = 'https://damo.today/api/v1';
 
 // Custom metrics
 const failRate = new Rate('fail_rate');
@@ -45,41 +45,49 @@ export const options = {
   },
 };
 
-// 사용자별 Access Token 캐시
-const accessTokens = {};
-
 /**
- * Refresh Token으로 Access Token 발급
+ * Setup: 테스트 시작 전 각 사용자별 Access Token 발급
  */
-function getAccessToken(user) {
-  if (accessTokens[user.userId]) {
-    return accessTokens[user.userId];
+export function setup() {
+  console.log('Setting up: Issuing access tokens for all users...');
+
+  const tokenMap = {};
+
+  for (const user of users) {
+    const res = http.post(
+      `${BASE_URL}/auth/test/${user.userId}`,
+      null,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        tags: { name: 'setup-token' },
+      }
+    );
+
+    if (res.status === 200 || res.status === 204) {
+      // 쿠키에서 access_token 추출
+      const cookies = res.cookies;
+      if (cookies && cookies.access_token && cookies.access_token.length > 0) {
+        tokenMap[user.userId] = cookies.access_token[0].value;
+        console.log(`Token issued for user ${user.userId}`);
+      } else {
+        // 응답 본문에서 추출 시도
+        try {
+          const body = JSON.parse(res.body);
+          tokenMap[user.userId] = body.data?.accessToken || body.accessToken;
+          console.log(`Token issued for user ${user.userId} (from body)`);
+        } catch (e) {
+          console.error(`Failed to get token for user ${user.userId}: no token in cookies or body`);
+        }
+      }
+    } else {
+      console.error(`Failed to issue token for user ${user.userId}: ${res.status}`);
+    }
   }
 
-  const res = http.post(
-    `${BASE_URL}/auth/reissue`,
-    null,
-    {
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': `refreshToken=${user.refreshToken}`,
-      },
-      tags: { name: 'reissue' },
-    }
-  );
-
-  if (res.status === 200) {
-    try {
-      const body = JSON.parse(res.body);
-      accessTokens[user.userId] = body.data?.accessToken || body.accessToken;
-      return accessTokens[user.userId];
-    } catch (e) {
-      console.error(`Failed to parse reissue response: ${e}`);
-    }
-  }
-
-  console.error(`Reissue failed for user ${user.userId}: ${res.status}`);
-  return null;
+  console.log(`Setup complete: ${Object.keys(tokenMap).length} tokens issued`);
+  return { tokenMap };
 }
 
 /**
@@ -118,36 +126,14 @@ function refreshRecommendation(user, accessToken) {
   return success;
 }
 
-/**
- * 투표 완료 시뮬레이션 (선행 조건)
- */
-function simulateVoteComplete(user, accessToken) {
-  const url = `${BASE_URL}/groups/${user.groupId}/dining/${user.diningId}/attendance-vote`;
+export default function (data) {
+  // groupId 101 (diningId 501)의 LEADER만 사용 - RESTAURANT_VOTING 상태
+  const leaderUsers = users.filter(u => u.groupId === 101 && u.role === 'LEADER');
+  const user = leaderUsers[Math.floor(Math.random() * leaderUsers.length)];
+  const accessToken = data.tokenMap[user.userId];
 
-  const payload = JSON.stringify({
-    isAttending: true,
-    preferredFood: ['한식', '중식', '일식'][Math.floor(Math.random() * 3)],
-  });
-
-  const res = http.post(url, payload, {
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${accessToken}`,
-    },
-    tags: { name: 'attendance-vote' },
-  });
-
-  return res.status >= 200 && res.status < 300;
-}
-
-export default function () {
-  // 랜덤 사용자 선택 (HOST만 재추천 가능하다고 가정)
-  const hostUsers = users.filter(u => u.role === 'HOST');
-  const user = hostUsers[Math.floor(Math.random() * hostUsers.length)];
-
-  // Access Token 획득
-  const accessToken = getAccessToken(user);
   if (!accessToken) {
+    console.error(`No token for user ${user.userId}`);
     failRate.add(1);
     return;
   }
