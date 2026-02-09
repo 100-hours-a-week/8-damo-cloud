@@ -1,0 +1,43 @@
+# 의존성 설치
+FROM node:24-alpine AS deps
+WORKDIR /app
+COPY package*.json ./
+RUN npm ci
+
+# 빌드
+FROM node:24-alpine AS builder
+WORKDIR /app
+
+# 빌드 시점 환경변수
+ARG NEXT_PUBLIC_API_URL
+ARG NEXT_PUBLIC_KAKAO_CLIENT_ID
+ARG NEXT_PUBLIC_KAKAO_REDIRECT_URI
+ARG NEXT_PUBLIC_S3_CDN
+ARG NEXT_PUBLIC_KAKAO_SDK_KEY
+ARG NEXT_PUBLIC_KAKAO_SDK_TEST_KEY
+ARG NEXT_PUBLIC_URL
+
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
+ENV NEXT_PUBLIC_KAKAO_CLIENT_ID=$NEXT_PUBLIC_KAKAO_CLIENT_ID
+ENV NEXT_PUBLIC_KAKAO_REDIRECT_URI=$NEXT_PUBLIC_KAKAO_REDIRECT_URI
+ENV NEXT_PUBLIC_S3_CDN=$NEXT_PUBLIC_S3_CDN
+ENV NEXT_PUBLIC_KAKAO_SDK_KEY=$NEXT_PUBLIC_KAKAO_SDK_KEY
+ENV NEXT_PUBLIC_KAKAO_SDK_TEST_KEY=$NEXT_PUBLIC_KAKAO_SDK_TEST_KEY
+ENV NEXT_PUBLIC_URL=$NEXT_PUBLIC_URL
+
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+RUN npm run build
+
+# 실행
+FROM node:24-alpine AS runner
+WORKDIR /app
+ENV NODE_ENV=production
+
+COPY --from=builder /app/public ./public
+COPY --from=builder /app/.next ./.next
+COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder /app/package.json ./package.json
+
+EXPOSE 3000
+CMD ["npm", "start"]
