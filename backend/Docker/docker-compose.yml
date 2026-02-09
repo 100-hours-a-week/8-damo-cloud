@@ -1,0 +1,13 @@
+version: "3.8"
+
+services:
+  springboot-server:
+    image: ${ECR_REPO}:${IMAGE_TAG}
+    container_name: spring-app
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      JAVA_OPTS: ""
+    restart: always
