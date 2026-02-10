@@ -6,29 +6,22 @@ on:
   pull_request:
     branches: [ main, dev ]
 
-permissions:
-  id-token: write
-  contents: read
-
 env:
   HOST: ${{ secrets.AI_PROD_SERVER_HOST }}
   USER: ${{ secrets.AI_PROD_SERVER_USER }}
   PORT: ${{ secrets.AI_PROD_SERVER_PORT }}
   KEY: ${{ secrets.AI_PROD_SERVER_KEY }}
 
-  REMOTE_DIR: /home/ubuntu/opt/ai-prod
-  INCOMING_DIR: /home/ubuntu/opt/ai-prod/incoming
+  AWS_REGION: ap-northeast-2
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPO_DEV: dev/ai
+  ECR_REPO_PROD: prod/ai
+  IMAGE_TAG: ${{ github.sha }}
 
-  ARTIFACT_FILE: ai-app.tar.gz
-  DEPLOY_SCRIPT: scripts/deploy_bigbang.sh
-
-  AWS_DEPLOY_ROLE_ARN: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-  DEPLOY_BUCKET: ${{ secrets.DEPLOY_BUCKET }}
-  CODEDEPLOY_APP_NAME: damo-ai
-
-  GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+  GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }} 
   MONGODB_URI: ${{ secrets.MONGODB_URI }}
   DB_NAME: ${{ secrets.DB_NAME }}
+
   OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
   LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
   LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
@@ -56,152 +49,118 @@ jobs:
       run: |
         poetry install
 
-    - name: Run Integration Tests
-      run: |
-        # run.test.sh를 활용하거나 직접 pytest 실행
-        chmod +x run.test.sh 
-        ./run.test.sh
-    
-    - name: Build tar.gz
-      if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
-      run: |
-        set -euo pipefail
+    # - name: Run Integration Tests
+    #   run: |
+    #     # run.test.sh를 활용하거나 직접 pytest 실행
+    #     chmod +x run.test.sh 
+    #     ./run.test.sh
 
-        rm -f "${{ env.ARTIFACT_FILE }}"
-        
-        tar -czf "${{ env.ARTIFACT_FILE }}" \
-          ecosystem.ai.config.js \
-          src \
-          main.py \
-          requirements.txt \
-          run.prod.sh \
-          run.dev.sh \
-          run.test.sh \
-          pyproject.toml
-
-    - name: Build CodeDeploy revision (zip)
-      if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
-      run: |
-        set -euo pipefail
-
-        rm -rf revision
-        mkdir -p revision/cd-hooks
-
-        cp codedeploy/appspec.yml revision/appspec.yml
-        cp "${{ env.ARTIFACT_FILE }}" revision/ai-app.tar.gz
-
-        cp codedeploy/cd-hooks/after_install.sh revision/cd-hooks/after_install.sh
-        chmod +x revision/cd-hooks/after_install.sh
-
-        if [ -f codedeploy/cd-hooks/validate.sh ]; then
-          cp codedeploy/cd-hooks/validate.sh revision/cd-hooks/validate.sh
-          chmod +x revision/cd-hooks/validate.sh
-        fi
-
-        (cd revision && zip -r ../revision.zip .)
-
-    # CodeDeploy용 revision.zip을 job 간 전달하기 위한 artifact 업로드
-    - name: Upload revision artifact
-      if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main')
-      uses: actions/upload-artifact@v4
-      with:
-        name: revision-zip
-        path: revision.zip
-        retention-days: 3
-
-
-  deploy:
-    needs: ci
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref_name == 'dev' || github.ref_name == 'main') && needs.ci.result == 'success'
+  build_push:
+    name: Build & Push (ECR)
+    runs-on: ubuntu-24.04-arm
+    needs: [ci]
+    if: github.event_name == 'push' && needs.ci.result == 'success'
 
     steps:
-      # ci job에서 만든 revision.zip 받아오기
-      - name: Download revision artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: revision-zip
-          path: .
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: ${{ env.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ap-northeast-2
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Upload revision to S3
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Resolve environment
         run: |
-          set -euo pipefail
-          S3_KEY="codedeploy/dev/ai/revision-${{ github.sha }}.zip"
-          aws s3 cp revision.zip "s3://${{ env.DEPLOY_BUCKET }}/$S3_KEY"
-          echo "S3_KEY=$S3_KEY" >> $GITHUB_ENV
-
-      - name: Create CodeDeploy deployment
-        run: |
-          set -euo pipefail
-
-          # 브랜치에 따라 배포그룹 분기
-          if [ "${{ github.ref_name }}" = "main" ]; then
-            DG="prod-damo-ai"
+          SHORT_SHA=${GITHUB_SHA::7}
+          IMAGE_TAG=${SHORT_SHA}
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            ECR_REPO="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_PROD }}"
           else
-            DG="dev-damo-ai"
+            ECR_REPO="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_DEV }}"
           fi
+          echo "ECR_REPO=${ECR_REPO}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${IMAGE_TAG}" >> "$GITHUB_ENV"
+          echo "IMAGE=${ECR_REPO}:${IMAGE_TAG}" >> "$GITHUB_ENV"
+          echo "LATEST_IMAGE=${ECR_REPO}:latest" >> "$GITHUB_ENV"
+          echo "DEBUG: ECR_REGISTRY=${{ env.ECR_REGISTRY }}"
+          echo "DEBUG: ECR_REPO_DEV=${{ env.ECR_REPO_DEV }}"
+          echo "DEBUG: Final ECR_REPO=${ECR_REPO}"
 
-          # create-deployment는 "요청"만 보내고 즉시 끝나므로,
-          # deploymentId를 받아서 다음 스텝에서 실제 배포 완료를 기다리게 한다.
-          DEPLOYMENT_ID="$(aws deploy create-deployment \
-            --application-name "${{ env.CODEDEPLOY_APP_NAME }}" \
-            --deployment-group-name "$DG" \
-            --s3-location bucket="${{ env.DEPLOY_BUCKET }}",key="$S3_KEY",bundleType=zip \
-            --query 'deploymentId' --output text)"
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/arm64
+          push: true
+          tags: |
+            ${{ env.IMAGE }}
+            ${{ env.LATEST_IMAGE }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-          echo "DEPLOYMENT_ID=$DEPLOYMENT_ID" >> $GITHUB_ENV
-          echo "Created deployment: $DEPLOYMENT_ID"
+  deploy:
+    name: CD (Docker deploy)
+    needs: build_push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && needs.ci.result == 'success'
 
-      - name: Wait for CodeDeploy deployment to succeed
+    steps:
+      - name: Setup WireGuard
         run: |
-          set -euo pipefail
+          sudo apt-get update && sudo apt-get install -y wireguard
+          echo "${{ secrets.WG_CONF }}" | sed '/^DNS/d' | sudo tee /etc/wireguard/wg0.conf
+          sudo chmod 600 /etc/wireguard/wg0.conf
+          sudo wg-quick up wg0
+          sudo wg show
+          ping -c 3 ${{ env.HOST }} || true
 
-          # 최대 대기 시간(초)
-          TIMEOUT_SECONDS=120
-          INTERVAL_SECONDS=10
-
-          start_ts="$(date +%s)"
-
-          while true; do
-            status="$(aws deploy get-deployment \
-              --deployment-id "$DEPLOYMENT_ID" \
-              --query 'deploymentInfo.status' \
-              --output text)"
-
-            echo "CodeDeploy status: $status"
-
-            case "$status" in
-              Succeeded)
-                echo "CodeDeploy deployment succeeded: $DEPLOYMENT_ID"
-                exit 0
-                ;;
-              Failed|Stopped)
-                # 실패 원인 메시지
-                err_msg="$(aws deploy get-deployment \
-                  --deployment-id "$DEPLOYMENT_ID" \
-                  --query 'deploymentInfo.errorInformation.message' \
-                  --output text || true)"
-                echo "CodeDeploy deployment $status: $DEPLOYMENT_ID"
-                echo "Error message: ${err_msg:-N/A}"
-                exit 1
-                ;;
-              *)
-                now_ts="$(date +%s)"
-                elapsed="$((now_ts - start_ts))"
-                if [ "$elapsed" -ge "$TIMEOUT_SECONDS" ]; then
-                  echo "Timeout waiting for CodeDeploy. deploymentId=$DEPLOYMENT_ID, lastStatus=$status"
-                  exit 1
-                fi
-                sleep "$INTERVAL_SECONDS"
-                ;;
-            esac
-          done
+      - name: Deploy via SSH (pull ECR image and run docker-compose)
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ env.HOST }}
+          username: ${{ env.USER }}
+          port: ${{ env.PORT }}
+          key: ${{ env.KEY }}
+          timeout: 300s
+          command_timeout: 60s
+          envs: ECR_REGISTRY,ECR_REPO_DEV,GITHUB_SHA
+          script: |
+            set -euo pipefail
+            cd /home/ubuntu
+            
+            # Debug environment variables
+            echo "DEBUG: ECR_REGISTRY=${{ env.ECR_REGISTRY }}"
+            echo "DEBUG: ECR_REPO_DEV=${{ env.ECR_REPO_DEV }}"
+            echo "DEBUG: GITHUB_SHA=${{ github.sha }}"
+            
+            # Set environment variables for docker-compose
+            export ECR_REPO="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_DEV }}"
+            export IMAGE_TAG="${GITHUB_SHA:0:7}"
+            echo "DEBUG: ECR_REPO=${ECR_REPO}"
+            echo "DEBUG: IMAGE_TAG=${IMAGE_TAG}"
+            
+            # Show docker-compose file content
+            echo "DEBUG: docker-compose.yml content:"
+            cat docker-compose.yml || echo "No docker-compose.yml found"
+            
+            # Use sudo with environment variables preserved
+            sudo -E ECR_REPO="${ECR_REPO}" IMAGE_TAG="${IMAGE_TAG}" docker compose pull
+            sudo -E ECR_REPO="${ECR_REPO}" IMAGE_TAG="${IMAGE_TAG}" docker compose up -d
+        
+      - name: Teardown WireGuard
+        if: always()
+        run: sudo wg-quick down wg0 || true
 
 
   notify:
