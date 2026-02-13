@@ -1,0 +1,374 @@
+{
+  "state": {
+    "isStdOutTTY": false,
+    "isStdErrTTY": false,
+    "testRunDurationMs": 61775.322
+  },
+  "metrics": {
+    "group_create_duration": {
+      "thresholds": {
+        "p(95)<1000": {
+          "ok": true
+        },
+        "p(99)<2000": {
+          "ok": true
+        }
+      },
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 383.20000000000005,
+        "p(95)": 449.9,
+        "avg": 209.04526748971193,
+        "min": 56,
+        "med": 166,
+        "max": 808
+      }
+    },
+    "http_req_tls_handshaking": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "min": 0,
+        "med": 0,
+        "max": 70.375,
+        "p(90)": 0,
+        "p(95)": 0,
+        "avg": 0.6302857658959538
+      }
+    },
+    "group_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 2436.053,
+        "p(90)": 1419.7103748000002,
+        "p(95)": 1585.4255034999994,
+        "avg": 705.6317920532176,
+        "min": 29.690208,
+        "med": 660.84
+      }
+    },
+    "vus_max": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 30,
+        "min": 30,
+        "max": 30
+      }
+    },
+    "data_sent": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 1039035,
+        "rate": 16819.580479078682
+      }
+    },
+    "checks": {
+      "values": {
+        "rate": 1,
+        "passes": 2767,
+        "fails": 0
+      },
+      "type": "rate",
+      "contains": "default"
+    },
+    "http_req_waiting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(95)": 740.4414999999998,
+        "avg": 298.0330130057808,
+        "min": 19.833,
+        "med": 214.9085,
+        "max": 2050.906,
+        "p(90)": 635.8713
+      }
+    },
+    "http_req_failed": {
+      "thresholds": {
+        "rate<0.05": {
+          "ok": true
+        }
+      },
+      "type": "rate",
+      "contains": "default",
+      "values": {
+        "passes": 0,
+        "fails": 2768,
+        "rate": 0
+      }
+    },
+    "vus": {
+      "type": "gauge",
+      "contains": "default",
+      "values": {
+        "value": 19,
+        "min": 19,
+        "max": 30
+      }
+    },
+    "http_req_sending": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "p(90)": 0.11130000000000007,
+        "p(95)": 0.15,
+        "avg": 0.06415643063583831,
+        "min": 0.011,
+        "med": 0.046,
+        "max": 6.305
+      }
+    },
+    "lightning_create_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 944,
+        "p(90)": 351,
+        "p(95)": 424.24999999999983,
+        "avg": 167.15267175572518,
+        "min": 30,
+        "med": 112
+      },
+      "thresholds": {
+        "p(95)<1000": {
+          "ok": true
+        },
+        "p(99)<2000": {
+          "ok": true
+        }
+      }
+    },
+    "read_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "med": 245,
+        "max": 2177,
+        "p(90)": 745.8000000000001,
+        "p(95)": 873.9499999999999,
+        "avg": 350.84836427939877,
+        "min": 20
+      },
+      "thresholds": {
+        "p(95)<500": {
+          "ok": false
+        },
+        "p(99)<1000": {
+          "ok": false
+        }
+      }
+    },
+    "http_req_connecting": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 0.20611958092485552,
+        "min": 0,
+        "med": 0,
+        "max": 25.468,
+        "p(90)": 0,
+        "p(95)": 0
+      }
+    },
+    "lightnings_created": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 262,
+        "rate": 4.2411757886102155
+      }
+    },
+    "fail_rate": {
+      "contains": "default",
+      "values": {
+        "rate": 0,
+        "passes": 0,
+        "fails": 2767
+      },
+      "thresholds": {
+        "rate<0.05": {
+          "ok": true
+        }
+      },
+      "type": "rate"
+    },
+    "data_received": {
+      "type": "counter",
+      "contains": "data",
+      "values": {
+        "count": 362839829,
+        "rate": 5873540.06831401
+      }
+    },
+    "http_req_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 319.9469869942195,
+        "min": 20.429,
+        "med": 220.0365,
+        "max": 2105.502,
+        "p(90)": 712.0572,
+        "p(95)": 841.5653999999997
+      }
+    },
+    "groups_created": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 243,
+        "rate": 3.9336096054667267
+      }
+    },
+    "iterations": {
+      "type": "counter",
+      "contains": "default",
+      "values": {
+        "count": 1259,
+        "rate": 20.380306556718555
+      }
+    },
+    "iteration_duration": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 1454.280134490072,
+        "min": 536.411833,
+        "med": 1411.925291,
+        "max": 3280.306625,
+        "p(90)": 2187.5231414,
+        "p(95)": 2411.5374045
+      }
+    },
+    "http_req_receiving": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 21.849817557803433,
+        "min": 0.011,
+        "med": 0.0895,
+        "max": 516.143,
+        "p(90)": 67.4324,
+        "p(95)": 106.29259999999996
+      }
+    },
+    "http_reqs": {
+      "contains": "default",
+      "values": {
+        "count": 2768,
+        "rate": 44.80753657585144
+      },
+      "type": "counter"
+    },
+    "http_req_blocked": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "max": 92.223,
+        "p(90)": 0.001,
+        "p(95)": 0.001,
+        "avg": 0.8456343930636685,
+        "min": 0,
+        "med": 0
+      }
+    },
+    "http_req_duration{expected_response:true}": {
+      "type": "trend",
+      "contains": "time",
+      "values": {
+        "avg": 319.9469869942195,
+        "min": 20.429,
+        "med": 220.0365,
+        "max": 2105.502,
+        "p(90)": 712.0572,
+        "p(95)": 841.5653999999997
+      }
+    }
+  },
+  "setup_data": {
+    "accessToken": "eyJhbGciOiJIUzI1NiJ9.eyJ1c2VySWQiOjIsImVtYWlsIjoidXNlcjJAdGVzdC5jb20iLCJpYXQiOjE3NzA5NjQ1NzQsImV4cCI6MTc3MDk2NTQ3NH0.YBp-EcLgQOx-ABGZyWTiiFbtta4gPrLhipUh1dTN6gc"
+  },
+  "root_group": {
+    "path": "",
+    "id": "d41d8cd98f00b204e9800998ecf8427e",
+    "groups": [
+      {
+        "name": "Group Create",
+        "path": "::Group Create",
+        "id": "511f992e8ea01fdf894a012ae2734714",
+        "groups": [],
+        "checks": [
+            {
+              "name": "group create 201",
+              "path": "::Group Create::group create 201",
+              "id": "b293a35ef992aa988ace8e68283c3ca6",
+              "passes": 243,
+              "fails": 0
+            }
+          ]
+      },
+      {
+        "name": "Read Operations",
+        "path": "::Read Operations",
+        "id": "7eee4b2c27796bc8c6d995c0d84e8a4b",
+        "groups": [],
+        "checks": [
+            {
+              "name": "my groups ok",
+              "path": "::Read Operations::my groups ok",
+              "id": "49d2541b814f50a5a2f8b3bd0770afa2",
+              "passes": 754,
+              "fails": 0
+            },
+            {
+              "name": "my profile ok",
+              "path": "::Read Operations::my profile ok",
+              "id": "b0ccf0567f571d8fe77e14541fda568e",
+              "passes": 754,
+              "fails": 0
+            },
+            {
+              "name": "lightning list ok",
+              "path": "::Read Operations::lightning list ok",
+              "id": "a728fd64a9577cb67ce971c27bdf32ed",
+              "passes": 754,
+              "fails": 0
+            }
+          ]
+      },
+      {
+        "name": "Lightning Create",
+        "path": "::Lightning Create",
+        "id": "d0ced4fdf21da453d451610b541c8fd4",
+        "groups": [],
+        "checks": [
+            {
+              "id": "4276cfa9716fa179c71e4c9e84031493",
+              "passes": 262,
+              "fails": 0,
+              "name": "lightning create 201",
+              "path": "::Lightning Create::lightning create 201"
+            }
+          ]
+      }
+    ],
+    "checks": [],
+    "name": ""
+  },
+  "options": {
+    "summaryTimeUnit": "",
+    "noColor": false,
+    "summaryTrendStats": [
+      "avg",
+      "min",
+      "med",
+      "max",
+      "p(90)",
+      "p(95)"
+    ]
+  }
+}
