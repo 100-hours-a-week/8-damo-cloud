@@ -7,8 +7,16 @@ on:
     branches: [main, develop]
 
 env:
-  NODE_VERSION: "20"
+  NODE_VERSION: '20'
   AWS_REGION: ap-northeast-2
+
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPO_DEV: dev/fe
+  ECR_REPO_PROD: prod/fe
+
+  DEPLOYMENT_APP: damo-fe
+  DEPLOYMENT_GROUP_DEV: dev-damo-fe
+  DEPLOYMENT_GROUP_PROD: prod-damo-fe
 
 jobs:
   ci:
@@ -23,7 +31,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: "npm"
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
@@ -63,8 +71,8 @@ jobs:
 
       - name: Resolve environment
         env:
-          ECR_REPO_DEV: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/dev/fe
-          ECR_REPO_PROD: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/fe
+          ECR_REPO_DEV: ${{env.ECR_REGISTRY}}/${{env.ECR_REPO_DEV}}
+          ECR_REPO_PROD: ${{env.ECR_REGISTRY}}/${{env.ECR_REPO_PROD}}
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
           IMAGE_TAG=${SHORT_SHA}
@@ -101,35 +109,110 @@ jobs:
             NEXT_PUBLIC_URL=${{ secrets.NEXT_PUBLIC_URL }}
 
   deploy:
-    name: CD (Docker deploy)
+    name: CD (CodeDeploy)
     runs-on: ubuntu-latest
     needs: [build_push]
     if: github.event_name == 'push' && needs.build_push.result == 'success'
 
     steps:
-      - name: Setup WireGuard
-        run: |
-          sudo apt-get update && sudo apt-get install -y wireguard
-          echo "${{ secrets.WG_CONF }}" | sed '/^DNS/d' | sudo tee /etc/wireguard/wg0.conf
-          sudo chmod 600 /etc/wireguard/wg0.conf
-          sudo wg-quick up wg0
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Deploy via SSH (pull/run)
-        uses: appleboy/ssh-action@master
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.FRONT_DEV_SERVER_HOST }}
-          username: ${{ secrets.SSH_USERNAME }}
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
-          script_stop: true
-          script: |
-            set -e
-            cd /home/ubuntu
-            sudo docker compose pull
-            sudo docker compose up -d
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-      - name: Teardown WireGuard
-        if: always()
-        run: sudo wg-quick down wg0 || true
+      - name: Resolve deployment target
+        run: |
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            echo "APPLICATION_NAME=${DEPLOYMENT_APP}" >> "$GITHUB_ENV"
+            echo "DEPLOYMENT_GROUP=${DEPLOYMENT_GROUP_PROD}" >> "$GITHUB_ENV"
+            echo "ECR_REPO=${ECR_REGISTRY}/${ECR_REPO_PROD}" >> "$GITHUB_ENV"
+          else
+            echo "APPLICATION_NAME=${DEPLOYMENT_APP}" >> "$GITHUB_ENV"
+            echo "DEPLOYMENT_GROUP=${DEPLOYMENT_GROUP_DEV}" >> "$GITHUB_ENV"
+            echo "ECR_REPO=${ECR_REGISTRY}/${ECR_REPO_DEV}" >> "$GITHUB_ENV"
+          fi
+
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "IMAGE_TAG=${SHORT_SHA}" >> "$GITHUB_ENV"
+          echo "IMAGE=${ECR_REPO}:${SHORT_SHA}" >> "$GITHUB_ENV"
+
+      - name: Prepare revision bundle (appspec/scripts + image info)
+        run: |
+          # CodeDeploy에서 스크립트가 어떤 이미지를 pull할지 알 수 있게 파일로 남김
+          mkdir -p scripts
+          cat > scripts/image.env <<EOF
+          IMAGE=${IMAGE}
+          IMAGE_TAG=${IMAGE_TAG}
+          ECR_REPO=${ECR_REPO}
+          ECR_REGISTRY=${ECR_REGISTRY}
+          EOF
+
+          # appspec.yml, scripts/, docker-compose.yml 를 deployment.zip에 포함
+          zip -r deployment.zip appspec.yml scripts/ docker-compose.yml
+
+      - name: Upload bundle to S3
+        run: |
+          S3_BUCKET="${{ secrets.CODEDEPLOY_BUCKET }}"
+          S3_KEY="codedeploy/prod/fe/${GITHUB_SHA::7}.zip"
+          aws s3 cp deployment.zip "s3://${S3_BUCKET}/${S3_KEY}"
+          echo "S3_BUCKET=${S3_BUCKET}" >> $GITHUB_ENV
+          echo "S3_KEY=${S3_KEY}" >> $GITHUB_ENV
+
+      - name: Create CodeDeploy deployment (from S3)
+        run: |
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name "${APPLICATION_NAME}" \
+            --deployment-group-name "${DEPLOYMENT_GROUP}" \
+            --deployment-config-name CodeDeployDefault.AllAtOnce \
+            --s3-location bucket="${S3_BUCKET}",key="${S3_KEY}",bundleType=zip \
+            --file-exists-behavior OVERWRITE \
+            --ignore-application-stop-failures \
+            --query deploymentId \
+            --output text)
+          echo "DEPLOYMENT_ID=${DEPLOYMENT_ID}" >> "$GITHUB_ENV"
+          echo "Created deployment: ${DEPLOYMENT_ID}"
+
+      - name: Wait for deployment complete
+        run: |
+          DEPLOYMENT_ID=${{ env.DEPLOYMENT_ID }}
+          echo "Waiting for deployment ${DEPLOYMENT_ID} to complete..."
+
+          while true; do
+            STATUS=$(aws deploy get-deployment \
+              --deployment-id "${DEPLOYMENT_ID}" \
+              --query 'deploymentInfo.status' \
+              --output text)
+            
+            EVENT=$(aws deploy get-deployment \
+              --deployment-id "${DEPLOYMENT_ID}" \
+              --query 'deploymentInfo.lifecycleEvents[?status=='"'"'InProgress'"'"'].name' \
+              --output text)
+            
+            if [ -n "${EVENT}" ]; then
+              echo "$(date '+%Y-%m-%d %H:%M:%S') - Status: ${STATUS}, Event: ${EVENT}"
+            else
+              echo "$(date '+%Y-%m-%d %H:%M:%S') - Status: ${STATUS}"
+            fi
+            
+            case "${STATUS}" in
+              Succeeded)
+                echo "Deployment succeeded!"
+                exit 0
+                ;;
+              Failed|Stopped)
+                echo "Deployment ${STATUS}"
+                exit 1
+                ;;
+              *)
+                sleep 10
+                ;;
+            esac
+          done
 
   k6_test:
     needs: deploy
