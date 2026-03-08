@@ -1,0 +1,45 @@
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+
+common:
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  configs:
+    - from: 2024-01-01
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+ruler:
+  alertmanager_url: http://localhost:9093
+
+# ✅ 추가: boltdb-shipper에서 compactor가 필요
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/index
+    cache_location: /loki/boltdb-cache
+    shared_store: filesystem
+
+# ✅ 추가: retention 실제 삭제를 수행
+compactor:
+  working_directory: /loki/compactor
+  shared_store: filesystem
+  retention_enabled: true
+
+# ✅ 추가: 보관기간6h로 제한
+limits_config:
+  retention_period: 6h

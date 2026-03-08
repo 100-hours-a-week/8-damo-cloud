@@ -1,0 +1,50 @@
+# BE 예시
+// ====== BE server: only collect selected containers ======
+local.file_match "docker_logs" {
+  path_targets = [
+    {
+      __path__ = "/var/lib/docker/containers/*/*-json.log",
+      job      = "docker",
+    },
+  ]
+}
+
+loki.source.file "docker" {
+  targets    = local.file_match.docker_logs.targets
+  forward_to = [loki.process.pipeline.receiver]
+}
+
+loki.process "pipeline" {
+  forward_to = [loki.write.to_loki.receiver]
+
+  stage.static_labels {
+    values = {
+      host = sys.env("HOSTNAME"),
+      env  = sys.env("ENV"),
+      role = sys.env("ROLE"),
+      job  = "docker",
+    }
+  }
+
+  stage.json {
+    expressions = {
+      msg = "log",
+      ts  = "time",
+    }
+  }
+
+  stage.output {
+    source = "msg"
+  }
+
+  stage.timestamp {
+    source = "ts"
+    format = "RFC3339Nano"
+  }
+}
+
+loki.write "to_loki" {
+  endpoint {
+    url = sys.env("LOKI_URL")
+  }
+}
