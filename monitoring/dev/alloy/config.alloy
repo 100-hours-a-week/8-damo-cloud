@@ -1,3 +1,4 @@
+# BE 예시
 // ====== BE server: only collect selected containers ======
 local.file_match "docker_logs" {
   path_targets = [
