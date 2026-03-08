@@ -1,0 +1,80 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  # Prometheus 자체 메트릭 (동작 확인용)
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["prometheus:9090"]
+
+  # =========================
+  # (1) Node Exporter (9100) - EC2 SD로 동적 수집
+  # =========================
+  - job_name: "ec2-node"
+    ec2_sd_configs:
+      - region: ap-northeast-2
+        port: 9100
+
+    relabel_configs:
+      # running만
+      - source_labels: [__meta_ec2_instance_state]
+        regex: running
+        action: keep
+
+      # (추천) prod만
+      - source_labels: [__meta_ec2_tag_env]
+        regex: prod
+        action: keep
+
+      # (선택) VPC로 한 번 더 제한
+      # - source_labels: [__meta_ec2_vpc_id]
+      #   regex: vpc-xxxxxxxxxxxxxxxxx
+      #   action: keep
+
+      # 스크랩 주소를 private ip:9100 으로
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: __address__
+        replacement: $1:9100
+
+      # 대시보드/알람용 라벨(안정적인 식별자)
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: node
+      - source_labels: [__meta_ec2_tag_Service]
+        target_label: service
+
+  # =========================
+  # (2) Spring Actuator (/actuator/prometheus) - EC2 SD로 동적 수집
+  # =========================
+  - job_name: "spring-actuator"
+    metrics_path: "/actuator/prometheus"
+    scheme: http
+
+    ec2_sd_configs:
+      - region: ap-northeast-2
+        port: 8080
+
+    relabel_configs:
+      - source_labels: [__meta_ec2_instance_state]
+        regex: running
+        action: keep
+
+      - source_labels: [__meta_ec2_tag_env]
+        regex: prod
+        action: keep
+
+      # actuator는 보통 BE만 켜두니까 Service=be 같은 태그로 제한 추천
+      - source_labels: [__meta_ec2_tag_server]
+        regex: be
+        action: keep
+
+      - source_labels: [__meta_ec2_private_ip]
+        target_label: __address__
+        replacement: $1:8080
+
+      - source_labels: [__meta_ec2_instance_id]
+        target_label: instance_id
+      - source_labels: [__meta_ec2_tag_Name]
+        target_label: node
