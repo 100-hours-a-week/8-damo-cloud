@@ -12,6 +12,7 @@
 .terraform/
 .terraform.lock.hcl
 .env*
+DESIGN.md
 
 # k6 test fixtures & seeds
 stress-test/**/fixtures*.json
