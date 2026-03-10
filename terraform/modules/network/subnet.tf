@@ -1,30 +1,27 @@
-# Public subnets (0 ~ N)
-resource "aws_subnet" "public" {
-  for_each = var.public_subnets
-
-  vpc_id                  = aws_vpc.this.id
-  cidr_block              = each.value.cidr
-  availability_zone       = each.value.az
-  map_public_ip_on_launch = true
-
-  tags = {
-    Name = "${var.name}-public-${each.key}"
-    Tier = "public"
-    env  = var.name
+data "aws_subnet" "public_01" {
+  filter {
+    name   = "tag:Name"
+    values = ["${var.vpc_name}-public-01"]
   }
 }
 
-# Private subnets (0 ~ N)
-resource "aws_subnet" "private" {
-  for_each = var.private_subnets
+data "aws_subnet" "public_02" {
+  filter {
+    name   = "tag:Name"
+    values = ["${var.vpc_name}-public-02"]
+  }
+}
 
-  vpc_id                  = aws_vpc.this.id
-  cidr_block              = each.value.cidr
-  availability_zone       = each.value.az
+data "aws_subnet" "private_01" {
+  filter {
+    name   = "tag:Name"
+    values = ["${var.vpc_name}-private-01"]
+  }
+}
 
-  tags = {
-    Name = "${var.name}-private-${each.key}"
-    Tier = "private"
-    env  = var.name
+data "aws_subnet" "private_02" {
+  filter {
+    name   = "tag:Name"
+    values = ["${var.vpc_name}-private-02"]
   }
 }

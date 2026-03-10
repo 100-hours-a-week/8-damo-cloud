@@ -1,10 +1,6 @@
 module "network" {
-  source = "../../modules/network"
-
-  name            = "prod"
-  vpc_cidr        = var.vpc_cidr
-  public_subnets  = var.public_subnets
-  private_subnets = var.private_subnets
+  source   = "../../modules/network"
+  vpc_name = "prod-damo"
 }
 
 module "security" {

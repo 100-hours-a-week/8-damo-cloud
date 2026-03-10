@@ -1,12 +1,17 @@
 output "vpc_id" {
-  value = aws_vpc.this.id
+  value = data.aws_vpc.this.id
 }
 
-# map 형태로 반환(키 = pub1/pri1/pri2 .. )
 output "public_subnet_ids" {
-  value = { for k, s in aws_subnet.public : k => s.id }
+  value = {
+    "01" = data.aws_subnet.public_01.id
+    "02" = data.aws_subnet.public_02.id
+  }
 }
 
 output "private_subnet_ids" {
-  value = { for k, s in aws_subnet.private : k => s.id }
+  value = {
+    "01" = data.aws_subnet.private_01.id
+    "02" = data.aws_subnet.private_02.id
+  }
 }

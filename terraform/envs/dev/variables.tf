@@ -3,24 +3,6 @@ variable "aws_region" {
   default = "ap-northeast-2"
 }
 
-variable "vpc_cidr" {
-  type = string
-}
-
-variable "public_subnets" {
-  type = map(object({
-    cidr = string
-    az   = string
-  }))
-}
-
-variable "private_subnets" {
-  type = map(object({
-    cidr = string
-    az   = string
-  }))
-}
-
 variable "instance_ami" {
   description = "AMI ID for the EC2 instance"
   type        = string
