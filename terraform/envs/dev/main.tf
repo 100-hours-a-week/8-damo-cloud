@@ -1,10 +1,6 @@
 module "network" {
-  source = "../../modules/network"
-
-  name            = "dev"
-  vpc_cidr        = var.vpc_cidr
-  public_subnets  = var.public_subnets
-  private_subnets = var.private_subnets
+  source   = "../../modules/network"
+  vpc_name = "dev-damo"
 }
 
 module "security" {
@@ -37,4 +33,3 @@ output "dev_public_subnet_ids" {
 output "dev_private_subnet_ids" {
   value = module.network.private_subnet_ids
 }
-
