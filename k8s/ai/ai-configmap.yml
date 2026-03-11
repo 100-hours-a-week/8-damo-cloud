@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ai-configmap
+  namespace: prod
+data:
+  GEMINI_MODEL: "gemini-3-flash-preview"
+  
+  AWS_ENDPOINT_URL: "https://damo.today"
+  AWS_REGION: "ap-northeast-2"
