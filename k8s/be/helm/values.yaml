@@ -1,0 +1,46 @@
+image:
+  repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/be
+  tag: "latest"
+
+replicas: 2
+
+resources:
+  requests:
+    cpu: "500m"
+    memory: "624Mi"
+  limits:
+    cpu: "2000m"
+    memory: "1.5Gi"
+
+config:
+  # Profile
+  ACTIVE_PROFILE: "prod"
+
+  # AWS S3
+  AWS_S3_BUCKET_NAME: "dev-damo-s3"
+  AWS_S3_REGION: "ap-northeast-2"
+  AWS_S3_DIRECTORY_PREFIX: "s3/images"
+
+  # Kakao OAuth
+  KAKAO_REDIRECT_URI: "https://damo.today/kakao/callback"
+  KAKAO_RESPONSE_TYPE: "code"
+
+  # QR
+  QR_IMAGE_FORMAT: "PNG"
+  QR_REDIRECT_URL: "https://damo.today/groups/preview"
+
+  # Redis
+  PROD_REDIS_HOST: "10.0.26.181"
+  PROD_REDIS_PORT: "6379"
+
+  # AI
+  AI_BASE_URL: "https://damo.today"
+
+  # APM
+  ELASTIC_APM_SERVER_URL: "http://43.201.216.204:8200"
+  ELASTIC_APM_SERVICE_NAME: "damo-dev-be"
+  ELASTIC_APM_ENVIRONMENT: "dev"
+
+
+service:
+  port: 8080
