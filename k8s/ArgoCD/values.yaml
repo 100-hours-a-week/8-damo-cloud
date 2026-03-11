@@ -1,0 +1,27 @@
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 32081   # http://worker-node-ip:32081 로 UI 접근
+    nodePortHttps: 32481
+  extraArgs:
+    - --insecure           # HTTP 접근 허용 (TLS 미사용)
+  ingress:
+    enabled: false
+
+repoServer:
+  livenessProbe:
+    httpGet:
+      path: /healthz?full=true
+      port: 8084
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5      # 기본값 1s → 5s로 증가
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /healthz
+      port: 8084
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
