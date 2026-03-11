@@ -14,6 +14,9 @@
 .env*
 DESIGN.md
 
+# k8s secrets
+k8s/**/secret.yaml
+
 # k6 test fixtures & seeds
 stress-test/**/fixtures*.json
 stress-test/**/seed*.sql
