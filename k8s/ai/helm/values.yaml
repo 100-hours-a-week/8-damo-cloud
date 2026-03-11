@@ -1,0 +1,27 @@
+appName: ai
+namespace: prod
+
+replicaCount: 2
+
+image:
+  repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/ai
+  tag: latest
+  pullPolicy: Always
+
+containerPort: 8000
+
+service:
+  type: ClusterIP
+  port: 8000
+
+podAntiAffinity:
+  enabled: true
+  weight: 100
+
+# kubectl로 별도 생성
+secretName: ai-secret
+
+configmap:
+  GEMINI_MODEL: "gemini-3-flash-preview"
+  AWS_ENDPOINT_URL: "https://damo.today"
+  AWS_REGION: "ap-northeast-2"

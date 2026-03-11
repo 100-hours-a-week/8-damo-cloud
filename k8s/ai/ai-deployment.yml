@@ -1,0 +1,39 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-deployment
+  namespace: prod
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-server
+  template:
+    metadata:
+      labels:
+        app: ai-server
+    spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - ai-server
+              topologyKey: "kubernetes.io/hostname"
+      imagePullSecrets:
+      - name: ecr-registry-secret
+      containers:
+      - name: ai-container
+        image: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/ai:latest
+        ports:
+        - containerPort: 8000
+        envFrom:
+        - secretRef:
+            name: ai-secret
+        - configMapRef:
+            name: ai-configmap
