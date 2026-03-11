@@ -1,0 +1,19 @@
+appName: frontend
+namespace: prod
+
+replicaCount: 2
+
+image:
+  repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/fe
+  tag: latest
+  pullPolicy: Always
+
+containerPort: 3000
+
+service:
+  type: ClusterIP
+  port: 3000
+
+podAntiAffinity:
+  enabled: true
+  weight: 100
