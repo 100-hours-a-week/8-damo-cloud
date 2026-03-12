@@ -1,0 +1,6 @@
+services:
+  gateway:
+    image: ${ECR_REPO}:${IMAGE_TAG}
+    network_mode: host
+    env_file:
+      - /home/ubuntu/.env

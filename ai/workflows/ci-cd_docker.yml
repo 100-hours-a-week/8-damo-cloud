@@ -1,0 +1,286 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, dev ]
+  pull_request:
+    branches: [ main, dev ]
+
+env:
+  USER: ${{ secrets.AI_SERVER_USER }}
+  PORT: ${{ secrets.AI_SERVER_PORT }}
+  KEY: ${{ secrets.AI_SERVER_KEY }}
+  HOST: ${{ github.ref == 'refs/heads/main' && secrets.AI_PROD_SERVER_HOST || secrets.AI_DEV_SERVER_HOST }}
+
+  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
+  ECR_REPO_DEV: dev/ai
+  ECR_REPO_PROD: prod/ai
+  
+  AWS_REGION: ap-northeast-2
+
+  DEPLOYMENT_APP: damo-ai
+  DEPLOYMENT_GROUP_DEV: dev-damo-ai
+  DEPLOYMENT_GROUP_PROD: prod-damo-ai
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12.12'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run Gateway Tests
+        env:
+            GOOGLE_API_KEY: ${{secrets.GOOGLE_API_KEY}}
+            OPENAI_API_KEY: ${{secrets.OPENAI_API_KEY}}
+            MONGODB_URI: ${{ secrets.MONGODB_URI}}
+            LANGFUSE_SECRET_KEY: ${{secrets.LANGFUSE_SECRET_KEY}}
+            LANGFUSE_PUBLIC_KEY: ${{secrets.LANGFUSE_PUBLIC_KEY}}
+            LANGFUSE_BASE_URL: ${{secrets.LANGFUSE_BASE_URL}}
+            AWS_ENDPOINT_URL: "dummy"
+            AWS_REGION: ${{secrets.AWS_REGION}}
+            AWS_BUCKET_NAME: "dev-damo-s3"
+            AWS_ACCESS_KEY_ID: ${{secrets.AWS_ACCESS_KEY_ID}}
+            AWS_SECRET: ${{secrets.AWS_SECRET_ACCESS_KEY}}
+            LANGSMITH_API_KEY: "dummy"
+            OPENROUTER_API_KEY: "dummy"
+            OPENROUTER_MODEL: "dummy"
+            KAFKA_BOOTSTRAP_SERVERS: "localhost:9092"
+            RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+            RUNPOD_API_URL: ${{ secrets.RUNPOD_API_URL }}
+            GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+        run: |
+            export PYTHONPATH=$PYTHONPATH:$(pwd)
+            python -m pytest test/gateway/test_gateway.py
+
+  build_and_push:
+    needs: ci
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-2
+
+      - name: Login to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve environment
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            ECR_REPO="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_PROD }}"
+          else
+            ECR_REPO="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_DEV }}"
+          fi
+          echo "ECR_REPO=${ECR_REPO}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${SHORT_SHA}" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile
+          push: true
+          platforms: linux/arm64
+          tags: |
+            ${{ env.ECR_REPO }}:${{ env.IMAGE_TAG }}
+            ${{ env.ECR_REPO }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy_dev:
+    name: CD (SSH Deploy - Dev)
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref_name == 'dev'
+
+    steps:
+      - name: Setup WireGuard
+        run: |
+          sudo apt-get update && sudo apt-get install -y wireguard
+          echo "${{ secrets.WG_CONF }}" | sed '/^DNS/d' | sudo tee /etc/wireguard/wg0.conf
+          sudo chmod 600 /etc/wireguard/wg0.conf
+          sudo wg-quick up wg0
+          sudo ip route add ${{ env.HOST }}/32 dev wg0
+          for i in {1..15}; do
+            ping -c 1 10.10.0.1 > /dev/null 2>&1 || true
+            if sudo wg show wg0 | grep -q "latest handshake"; then
+              echo "VPN handshake OK (attempt $i)"
+              break
+            fi
+            echo "Attempt $i: not connected yet, retrying..."
+            sleep 2
+          done
+          sleep 3
+
+      - name: Resolve environment
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          ECR_REPO="${{ env.ECR_REGISTRY }}/${{ env.ECR_REPO_DEV }}"
+          echo "ECR_REPO=${ECR_REPO}" >> "$GITHUB_ENV"
+          echo "IMAGE_TAG=${SHORT_SHA}" >> "$GITHUB_ENV"
+
+      - name: Deploy via SSH (pull ECR image and run docker-compose)
+        run: |
+          echo "${{ env.KEY }}" > /tmp/deploy_key
+          chmod 600 /tmp/deploy_key
+          ssh -i /tmp/deploy_key \
+            -o StrictHostKeyChecking=no \
+            -p ${{ env.PORT }} \
+            ${{ env.USER }}@${{ env.HOST }} \
+            "set -euo pipefail && \
+             export PATH=/usr/local/bin:/usr/bin:/snap/bin:\$PATH && \
+             source ~/.bashrc 2>/dev/null || true && \
+             aws ssm get-parameter --name '/damo/ai/DEV_ENV' --with-decryption --query 'Parameter.Value' --output text > /home/ubuntu/.env && \
+             echo '' >> /home/ubuntu/.env && \
+             echo 'ECR_REPO=${{ env.ECR_REPO }}' >> /home/ubuntu/.env && \
+             echo 'IMAGE_TAG=${{ env.IMAGE_TAG }}' >> /home/ubuntu/.env && \
+             aws ecr get-login-password --region ap-northeast-2 | docker login --username AWS --password-stdin ${{ env.ECR_REGISTRY }} && \
+             cd /home/ubuntu && sudo docker compose pull gateway && sudo docker compose up -d gateway"
+          rm -f /tmp/deploy_key
+
+      - name: Teardown WireGuard
+        if: always()
+        run: sudo wg-quick down wg0 || true
+
+  deploy_prod:
+    name: CD (CodeDeploy - Prod)
+    needs: build_and_push
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref_name == 'main'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Resolve deployment target
+        run: |
+          echo "APPLICATION_NAME=${DEPLOYMENT_APP}" >> "$GITHUB_ENV"
+          echo "DEPLOYMENT_GROUP=${DEPLOYMENT_GROUP_PROD}" >> "$GITHUB_ENV"
+          echo "ECR_REPO=${ECR_REGISTRY}/${ECR_REPO_PROD}" >> "$GITHUB_ENV"
+          echo "ECR_REGISTRY=${ECR_REGISTRY}" >> "$GITHUB_ENV"
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "IMAGE_TAG=${SHORT_SHA}" >> "$GITHUB_ENV"
+
+      - name: Prepare revision bundle (appspec/scripts + image info)
+        run: |
+          cat > scripts/image.env <<EOF
+          IMAGE_TAG=${IMAGE_TAG}
+          ECR_REPO=${ECR_REPO}
+          ECR_REGISTRY=${ECR_REGISTRY}
+          EOF
+          chmod +x scripts/*.sh
+
+          zip -r deployment.zip appspec.yml scripts/ docker-compose.yml
+
+      - name: Upload bundle to S3
+        run: |
+          S3_BUCKET="${{ secrets.CODEDEPLOY_BUCKET }}"
+          S3_KEY="codedeploy/prod/ai/${GITHUB_SHA::7}.zip"
+          aws s3 cp deployment.zip "s3://${S3_BUCKET}/${S3_KEY}"
+          echo "S3_BUCKET=${S3_BUCKET}" >> $GITHUB_ENV
+          echo "S3_KEY=${S3_KEY}" >> $GITHUB_ENV
+
+      - name: Create CodeDeploy deployment (from S3)
+        run: |
+          DEPLOYMENT_ID=$(aws deploy create-deployment \
+            --application-name "${APPLICATION_NAME}" \
+            --deployment-group-name "${DEPLOYMENT_GROUP}" \
+            --deployment-config-name CodeDeployDefault.AllAtOnce \
+            --s3-location bucket="${S3_BUCKET}",key="${S3_KEY}",bundleType=zip \
+            --file-exists-behavior OVERWRITE \
+            --ignore-application-stop-failures \
+            --query deploymentId \
+            --output text)
+          echo "DEPLOYMENT_ID=${DEPLOYMENT_ID}" >> "$GITHUB_ENV"
+          echo "Created deployment: ${DEPLOYMENT_ID}"
+
+      - name: Wait for deployment complete
+        run: |
+          DEPLOYMENT_ID=${{ env.DEPLOYMENT_ID }}
+          echo "Waiting for deployment ${DEPLOYMENT_ID} to complete..."
+
+          while true; do
+            STATUS=$(aws deploy get-deployment \
+              --deployment-id "${DEPLOYMENT_ID}" \
+              --query 'deploymentInfo.status' \
+              --output text)
+            
+            EVENT=$(aws deploy get-deployment \
+              --deployment-id "${DEPLOYMENT_ID}" \
+              --query 'deploymentInfo.lifecycleEvents[0].name' \
+              --output text)
+            
+            EVENT_STATUS=$(aws deploy get-deployment \
+              --deployment-id "${DEPLOYMENT_ID}" \
+              --query 'deploymentInfo.lifecycleEvents[0].status' \
+              --output text)
+            
+            echo "$(date '+%Y-%m-%d %H:%M:%S') - Status: ${STATUS}, Event: ${EVENT} (${EVENT_STATUS})"
+            
+            case "${STATUS}" in
+              Succeeded)
+                echo "Deployment succeeded!"
+                exit 0
+                ;;
+              Failed|Stopped)
+                echo "Deployment ${STATUS}"
+                exit 1
+                ;;
+              *)
+                sleep 10
+                ;;
+            esac
+          done
+
+  notify:
+    name: Notify Discord
+    runs-on: ubuntu-latest
+    needs: [ci, build_and_push, deploy_dev, deploy_prod]
+    if: always() && github.event_name == 'push'
+
+    steps:
+      - name: Send notification
+        run: |
+          CI_RESULT="${{ needs.ci.result }}"
+          DEV_DEPLOY_RESULT="${{ needs.deploy_dev.result }}"
+          PROD_DEPLOY_RESULT="${{ needs.deploy_prod.result }}"
+          
+          if [ "${GITHUB_REF_NAME}" = "main" ]; then
+            DEPLOY_RESULT="${PROD_DEPLOY_RESULT}"
+          else
+            DEPLOY_RESULT="${DEV_DEPLOY_RESULT}"
+          fi
+          
+          REF="${{ github.repository }}@${{ github.ref_name }}"
+          RUN_URL="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+          curl -H "Content-Type: application/json" \
+                -X POST \
+              -d "{\"username\":\"AI CI/CD\",\"content\":\"🖥️ AI CI/CD 결과\\n- CI: **${CI_RESULT}**\\n- Deploy: **${DEPLOY_RESULT}**\\n🔗 [${REF}](${RUN_URL})\"}" \
+              ${{ secrets.DISCORD_WEBHOOK_URL }}
