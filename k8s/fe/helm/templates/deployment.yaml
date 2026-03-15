@@ -33,7 +33,7 @@ spec:
                 topologyKey: "kubernetes.io/hostname"
       {{- end }}
       containers:
-        - name: {{ .Values.appName }
+        - name: {{ .Values.appName }}
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
