@@ -17,3 +17,6 @@ DESIGN.md
 # k6 test fixtures & seeds
 stress-test/**/fixtures*.json
 stress-test/**/seed*.sql
+
+# secret
+ai-secret.yml

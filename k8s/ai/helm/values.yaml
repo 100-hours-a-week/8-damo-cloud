@@ -3,6 +3,11 @@ namespace: prod
 
 replicaCount: 2
 
+strategy:
+  rollingUpdate:
+    maxSurge: 1
+    maxUnavailable: 0
+
 image:
   repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/ai
   tag: latest
@@ -13,6 +18,14 @@ containerPort: 8000
 service:
   type: ClusterIP
   port: 8000
+
+resources:
+  requests:
+    cpu: "300m"
+    memory: "1Gi"
+  limits:
+    cpu: "1500m"
+    memory: "2Gi"
 
 podAntiAffinity:
   enabled: true
