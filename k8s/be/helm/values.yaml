@@ -1,6 +1,6 @@
 image:
   repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/be
-  tag: "latest"
+  tag: a8eae5a
 
 replicas: 2
 
