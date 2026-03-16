@@ -34,7 +34,7 @@ config:
   PROD_REDIS_PORT: "6379"
 
   # AI
-  AI_BASE_URL: "https://damo.today"
+  AI_BASE_URL: "http://ai:8000"
 
   # APM
   ELASTIC_APM_SERVER_URL: "http://43.201.216.204:8200"
