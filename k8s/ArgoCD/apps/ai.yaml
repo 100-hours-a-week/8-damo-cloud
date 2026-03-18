@@ -8,7 +8,7 @@ spec:
   source:
     repoURL: https://github.com/100-hours-a-week/8-damo-cloud.git
     targetRevision: main
-    path: k8s/ai/helm
+    path: k8s/apps/ai/helm
   destination:
     server: https://kubernetes.default.svc
     namespace: prod
