@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: mongo-netpol
+  namespace: prod
+spec:
+  podSelector:
+    matchLabels:
+      app: mongo
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+    - from:
+        - podSelector:
+            matchLabels:
+              app: ai
+    - from:
+        - ipBlock:
+            cidr: 10.0.0.0/16
+      ports:
+        - port: 27017
