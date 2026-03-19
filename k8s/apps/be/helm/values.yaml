@@ -1,3 +1,6 @@
+appName: backend
+namespace: prod
+
 image:
   repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/be
   tag: a8eae5a
@@ -44,3 +47,15 @@ config:
 
 service:
   port: 8080
+
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 70
+  scaleUp:
+    pods: 1
+    periodSeconds: 30
+  scaleDown:
+    stabilizationWindowSeconds: 300
+    pods: 1

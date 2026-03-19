@@ -1,0 +1,66 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-scripts
+  namespace: {{ .Values.namespace }}
+data:
+  start.sh: |
+    #!/bin/sh
+    ORDINAL=${HOSTNAME##*-}
+    SENTINEL_HOST="{{ .Values.appName }}-sentinel.{{ .Values.namespace }}.svc.cluster.local"
+    SENTINEL_PORT="{{ .Values.sentinel.port }}"
+    MASTER_NAME="{{ .Values.redis.masterName }}"
+    HEADLESS_SVC="{{ .Values.appName }}-headless.{{ .Values.namespace }}.svc.cluster.local"
+    REDIS_PORT="{{ .Values.redis.port }}"
+    MY_IP=$(hostname -i)
+
+    # sentinel에서 현재 master 조회 (재시도 5회)
+    MASTER_HOST=""
+    for i in $(seq 1 5); do
+      MASTER_HOST=$(redis-cli -h "$SENTINEL_HOST" -p "$SENTINEL_PORT" \
+        SENTINEL get-master-addr-by-name "$MASTER_NAME" 2>/dev/null | head -1)
+      [ -n "$MASTER_HOST" ] && break
+      sleep 2
+    done
+
+    if [ -n "$MASTER_HOST" ]; then
+      if [ "$MASTER_HOST" = "$MY_IP" ]; then
+        echo "[redis-$ORDINAL] sentinel 확인: 내가 MASTER"
+        exec redis-server \
+          --port "$REDIS_PORT" \
+          --replica-announce-ip "$MY_IP" \
+          --replica-announce-port "$REDIS_PORT" \
+          --maxmemory {{ .Values.redis.config.maxmemory }} \
+          --maxmemory-policy {{ .Values.redis.config.maxmemoryPolicy }} \
+          --protected-mode no
+      else
+        echo "[redis-$ORDINAL] sentinel 확인: REPLICA of $MASTER_HOST"
+        exec redis-server \
+          --port "$REDIS_PORT" \
+          --replicaof "$MASTER_HOST" "$REDIS_PORT" \
+          --replica-announce-ip "$MY_IP" \
+          --replica-announce-port "$REDIS_PORT" \
+          --maxmemory {{ .Values.redis.config.maxmemory }} \
+          --maxmemory-policy {{ .Values.redis.config.maxmemoryPolicy }} \
+          --protected-mode no
+      fi
+    elif [ "$ORDINAL" = "0" ]; then
+      echo "[redis-0] sentinel 없음: MASTER로 시작"
+      exec redis-server \
+        --port "$REDIS_PORT" \
+        --replica-announce-ip "$MY_IP" \
+        --replica-announce-port "$REDIS_PORT" \
+        --maxmemory {{ .Values.redis.config.maxmemory }} \
+        --maxmemory-policy {{ .Values.redis.config.maxmemoryPolicy }} \
+        --protected-mode no
+    else
+      echo "[redis-$ORDINAL] sentinel 없음: redis-0의 REPLICA로 시작"
+      exec redis-server \
+        --port "$REDIS_PORT" \
+        --replicaof "redis-0.$HEADLESS_SVC" "$REDIS_PORT" \
+        --replica-announce-ip "$MY_IP" \
+        --replica-announce-port "$REDIS_PORT" \
+        --maxmemory {{ .Values.redis.config.maxmemory }} \
+        --maxmemory-policy {{ .Values.redis.config.maxmemoryPolicy }} \
+        --protected-mode no
+    fi

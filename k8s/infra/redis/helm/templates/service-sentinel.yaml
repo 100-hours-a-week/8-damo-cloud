@@ -1,0 +1,14 @@
+# 클라이언트가 sentinel에 접근하는 ClusterIP 서비스 (master 주소 조회용)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}-sentinel
+  namespace: {{ .Values.namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app: {{ .Values.appName }}-sentinel
+  ports:
+    - port: {{ .Values.sentinel.port }}
+      targetPort: {{ .Values.sentinel.port }}
+      protocol: TCP

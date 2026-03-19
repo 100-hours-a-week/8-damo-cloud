@@ -1,0 +1,58 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Values.appName }}-sentinel
+  namespace: {{ .Values.namespace }}
+spec:
+  serviceName: {{ .Values.appName }}-sentinel-headless
+  replicas: 3
+  selector:
+    matchLabels:
+      app: {{ .Values.appName }}-sentinel
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.appName }}-sentinel
+    spec:
+      affinity:
+        podAntiAffinity:
+          # soft: 가능하면 분산, 노드 2개라 sentinel-1과 sentinel-2는 같은 노드에 배치됨
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    app: {{ .Values.appName }}-sentinel
+                topologyKey: kubernetes.io/hostname
+      containers:
+        - name: sentinel
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/sh", "/scripts/start.sh"]
+          ports:
+            - containerPort: {{ .Values.sentinel.port }}
+          resources:
+            requests:
+              cpu: {{ .Values.sentinel.resources.requests.cpu }}
+              memory: {{ .Values.sentinel.resources.requests.memory }}
+            limits:
+              cpu: {{ .Values.sentinel.resources.limits.cpu }}
+              memory: {{ .Values.sentinel.resources.limits.memory }}
+          livenessProbe:
+            exec:
+              command: ["redis-cli", "-p", "{{ .Values.sentinel.port }}", "ping"]
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command: ["redis-cli", "-p", "{{ .Values.sentinel.port }}", "ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          volumeMounts:
+            - name: scripts
+              mountPath: /scripts
+      volumes:
+        - name: scripts
+          configMap:
+            name: sentinel-scripts
+            defaultMode: 0755
