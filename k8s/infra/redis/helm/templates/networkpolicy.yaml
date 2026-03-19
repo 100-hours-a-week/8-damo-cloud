@@ -1,0 +1,50 @@
+# Redis Pod: backend과 sentinel에서만 6379 접근 허용, redis끼리 replication 허용
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.appName }}-netpol
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Values.appName }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+        - podSelector:
+            matchLabels:
+              app: {{ .Values.appName }}-sentinel
+        - podSelector:
+            matchLabels:
+              app: {{ .Values.appName }}
+      ports:
+        - port: {{ .Values.redis.port }}
+          protocol: TCP
+---
+# Sentinel Pod: backend과 sentinel끼리만 26379 접근 허용
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Values.appName }}-sentinel-netpol
+  namespace: {{ .Values.namespace }}
+spec:
+  podSelector:
+    matchLabels:
+      app: {{ .Values.appName }}-sentinel
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app: backend
+        - podSelector:
+            matchLabels:
+              app: {{ .Values.appName }}-sentinel
+      ports:
+        - port: {{ .Values.sentinel.port }}
+          protocol: TCP

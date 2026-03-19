@@ -1,0 +1,31 @@
+# Redis StatefulSet용 headless service (Pod DNS 생성: redis-0.redis-headless.prod.svc.cluster.local)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}-headless
+  namespace: {{ .Values.namespace }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: {{ .Values.appName }}
+  ports:
+    - port: {{ .Values.redis.port }}
+      targetPort: {{ .Values.redis.port }}
+      protocol: TCP
+---
+# Sentinel StatefulSet용 headless service (serviceName 요구사항)
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Values.appName }}-sentinel-headless
+  namespace: {{ .Values.namespace }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  selector:
+    app: {{ .Values.appName }}-sentinel
+  ports:
+    - port: {{ .Values.sentinel.port }}
+      targetPort: {{ .Values.sentinel.port }}
+      protocol: TCP

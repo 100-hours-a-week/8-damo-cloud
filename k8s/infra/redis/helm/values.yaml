@@ -1,0 +1,38 @@
+appName: redis
+namespace: prod
+
+image:
+  repository: redis
+  tag: "7-alpine"
+  pullPolicy: IfNotPresent
+
+redis:
+  port: 6379
+  masterName: redis-master
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "700Mi"
+    limits:
+      cpu: "500m"
+      memory: "2Gi"
+  config:
+    maxmemory: "1800mb"
+    maxmemoryPolicy: "allkeys-lru"
+
+sentinel:
+  port: 26379
+  quorum: 2
+  downAfterMilliseconds: 5000
+  failoverTimeout: 60000
+  resources:
+    requests:
+      cpu: "50m"
+      memory: "100Mi"
+    limits:
+      cpu: "100m"
+      memory: "200Mi"
+
+storage:
+  storageClassName: gp3
+  size: 1Gi

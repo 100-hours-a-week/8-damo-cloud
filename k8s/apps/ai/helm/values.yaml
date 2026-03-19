@@ -31,6 +31,18 @@ podAntiAffinity:
   enabled: true
   weight: 100
 
+hpa:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 3
+  targetCPUUtilizationPercentage: 60
+  scaleUp:
+    pods: 1
+    periodSeconds: 15
+  scaleDown:
+    stabilizationWindowSeconds: 600
+    pods: 1
+
 # kubectl로 별도 생성
 secretName: ai-secret
 
