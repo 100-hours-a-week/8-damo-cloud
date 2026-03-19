@@ -23,3 +23,4 @@ stress-test/**/seed*.sql
 
 # secret
 ai-secret.yml
+mongo-keyfile
