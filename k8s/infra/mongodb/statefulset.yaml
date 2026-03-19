@@ -51,6 +51,15 @@ spec:
             - --auth
             - --keyFile
             - /etc/mongodb/keyfile
+            - --wiredTigerCacheSizeGB
+            - "1"
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "512Mi"
+            limits:
+              cpu: "2000m"
+              memory: "2Gi"
           ports:
             - containerPort: 27017
               name: mongo
