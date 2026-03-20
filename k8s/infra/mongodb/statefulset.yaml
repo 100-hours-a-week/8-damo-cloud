@@ -28,7 +28,7 @@ spec:
       topologySpreadConstraints:
         - maxSkew: 1
           topologyKey: topology.kubernetes.io/zone
-          whenUnsatisfiable: DoNotSchedule
+          whenUnsatisfiable: ScheduleAnyway
           labelSelector:
             matchLabels:
               app: mongo
@@ -55,7 +55,7 @@ spec:
             - "1"
           resources:
             requests:
-              cpu: "500m"
+              cpu: "100m"
               memory: "512Mi"
             limits:
               cpu: "2000m"
