@@ -3,7 +3,7 @@ namespace: prod
 
 image:
   repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/be
-  tag: c175f75
+  tag: d19e40b
 
 replicas: 2
 
