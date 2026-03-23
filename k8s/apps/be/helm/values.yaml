@@ -35,6 +35,7 @@ config:
   # Redis Sentinel
   SPRING_DATA_REDIS_SENTINEL_MASTER: "redis-master"
   SPRING_DATA_REDIS_SENTINEL_NODES: "redis-sentinel.prod.svc.cluster.local:26379"
+  SPRING_DATA_REDIS_PORT: "6379"
 
   # AI
   AI_BASE_URL: "http://ai:8000"
