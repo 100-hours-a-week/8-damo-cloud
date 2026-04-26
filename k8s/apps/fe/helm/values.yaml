@@ -10,7 +10,7 @@ strategy:
 
 image:
   repository: 080598576517.dkr.ecr.ap-northeast-2.amazonaws.com/prod/fe
-  tag: 8cd1ce8
+  tag: 9221de2
   pullPolicy: Always
 
 containerPort: 3000
